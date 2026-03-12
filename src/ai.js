@@ -1,6 +1,6 @@
 // src/ai.js — All Claude API calls go through Firebase Cloud Function proxy
 // YOUR_PROJECT_ID will be your Firebase project ID (focusflow-1b7f2)
-const PROXY_URL = "https://us-central1-focusflow-1b7f2.cloudfunctions.net/claudeProxy";
+const PROXY_URL = "https://claudeproxy-t4agi5wjoq-uc.a.run.app";
 
 async function callClaude(prompt, maxTokens = 300) {
   try {
