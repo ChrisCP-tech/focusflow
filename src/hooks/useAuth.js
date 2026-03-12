@@ -1,6 +1,6 @@
 // src/hooks/useAuth.js
 import { useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, provider } from "../firebase/config";
 
@@ -9,9 +9,6 @@ export function useAuth() {
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
-    // Handle redirect result when page loads back
-    getRedirectResult(auth).catch(console.error);
-
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
@@ -44,7 +41,7 @@ export function useAuth() {
   }, []);
 
   async function login() {
-    try { await signInWithRedirect(auth, provider); } catch (e) { console.error(e); }
+    try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   }
 
   async function logout() {
