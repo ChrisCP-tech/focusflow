@@ -24,10 +24,11 @@ export const Btn = ({ children, onClick, color = "#6C63FF", small = false, ghost
   >{children}</button>
 );
 
-export const Input = ({ value, onChange, placeholder, style = {}, multiline = false, type = "text" }) => {
+export const Input = ({ value, onChange, onKeyDown, placeholder, style = {}, multiline = false, type = "text" }) => {
   const props = {
     value, type,
     onChange: e => onChange(e.target.value),
+    onKeyDown,
     placeholder,
     style: {
       background: "rgba(255,255,255,0.06)",

@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { useSquads, useSquadFeed, useSquadChallenges } from "../hooks/useSquads";
 import { useCollabTasks } from "../hooks/useCollabTasks";
-import { TYPE_ICONS, TYPE_COLORS, HABIT_ICONS, HABIT_COLORS } from "../utils";
+import { TYPE_ICONS, TYPE_COLORS, HABIT_ICONS, HABIT_COLORS, getLevel, getLevelUnlocks } from "../utils";
 
 const SQUAD_EMOJIS = ["👥","🔥","📚","🚀","💪","🎯","🧠","⚡","🌟","🎮","🏆","🌈"];
 
@@ -11,14 +11,17 @@ const SQUAD_EMOJIS = ["👥","🔥","📚","🚀","💪","🎯","🧠","⚡","�
 export function SquadsPage({ profile, uid }) {
   const { squads, createSquad, joinSquadByCode, leaveSquad } = useSquads(uid);
   const [activeSquadId, setActiveSquadId] = useState(null);
-  const [tab, setTab] = useState("feed"); // feed | tasks | challenges | members
+  const [tab, setTab] = useState("feed");
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [newSquadName, setNewSquadName] = useState("");
   const [newSquadEmoji, setNewSquadEmoji] = useState("👥");
   const [joinCode, setJoinCode] = useState("");
   const [joinStatus, setJoinStatus] = useState(null);
+  const [createError, setCreateError] = useState(null);
 
+  const level   = getLevel(profile?.xp || 0);
+  const unlocks = getLevelUnlocks(level);
   const activeSquad = squads.find(s => s.id === activeSquadId) || squads[0];
 
   useEffect(() => {
@@ -27,7 +30,17 @@ export function SquadsPage({ profile, uid }) {
 
   async function handleCreate() {
     if (!newSquadName.trim()) return;
+    if (!unlocks.canCreateSquad) {
+      setCreateError("Squad creation unlocks at Level 5. Keep earning XP!");
+      return;
+    }
+    if (squads.length >= unlocks.maxSquads) {
+      setCreateError(`You've reached your squad limit (${unlocks.maxSquads}). Level up to unlock more squad slots!`);
+      return;
+    }
+    setCreateError(null);
     const id = await createSquad(profile, newSquadName.trim(), newSquadEmoji);
+    if (!id) { setCreateError("Failed to create squad. Check console for errors."); return; }
     setActiveSquadId(id);
     setShowCreate(false);
     setNewSquadName("");
@@ -66,7 +79,11 @@ export function SquadsPage({ profile, uid }) {
               }}>{e}</button>
             ))}
           </div>
-          <Btn color="#6C63FF" style={{ width: "100%" }} onClick={handleCreate}>Create Squad</Btn>
+          {createError && <div style={{ fontSize:12, color:"#FF6B6B", marginBottom:8, padding:"6px 10px", background:"rgba(255,107,107,0.1)", borderRadius:8 }}>{createError}</div>}
+          {!unlocks.canCreateSquad
+            ? <div style={{ textAlign:"center", padding:"10px 0", fontSize:13, color:"rgba(255,255,255,0.4)" }}>🔒 Level up to create squads</div>
+            : <Btn color="#6C63FF" style={{ width: "100%" }} onClick={handleCreate}>Create Squad</Btn>
+          }
         </Card>
       )}
 

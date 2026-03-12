@@ -1,15 +1,15 @@
 // src/App.js
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth }         from "./hooks/useAuth";
 import { useTasks, useHabits, useFeed, useSquadMembers, useMoodLog, useFriends, useTaskInvites, useGold } from "./hooks/useData";
-import LoginScreen         from "./components/LoginScreen";
-import Onboard             from "./components/Onboard";
+import LoginScreen           from "./components/LoginScreen";
+import Onboard               from "./components/Onboard";
 import { TopBar, BottomNav } from "./components/Nav";
 import { XPToast, Confetti } from "./components/UI";
 import { HomePage, TasksPage, HabitsPage, aiAuditTask } from "./components/Pages";
 import { FocusPage, SocialPage, ProfilePage, ProfileViewer } from "./components/MorePages";
-import { SquadsPage } from "./components/SquadsPage";
-import { getLevel, getLevelUnlocks } from "./utils";
+import { SquadsPage }        from "./components/SquadsPage";
+import { getLevel, getLevelUnlocks, LEVEL_NAMES } from "./utils";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -19,9 +19,9 @@ const css = `
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
   select, input, textarea, button { font-family: 'DM Sans', sans-serif; }
-  @keyframes fadeUp    { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes confetti  { 0% { transform: translateY(-10px) rotate(0deg); opacity: 1; } 100% { transform: translateY(90px) rotate(720deg); opacity: 0; } }
-  @keyframes spin      { to { transform: rotate(360deg); } }
+  @keyframes fadeUp   { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes confetti { 0% { transform:translateY(-10px) rotate(0deg); opacity:1; } 100% { transform:translateY(90px) rotate(720deg); opacity:0; } }
+  @keyframes spin     { to { transform:rotate(360deg); } }
   .fadeUp { animation: fadeUp 0.35s ease both; }
 `;
 if (!document.getElementById("ff-styles")) {
@@ -41,22 +41,24 @@ export default function App() {
   const uid    = user?.uid;
   const roomId = getRoomId();
 
-  const { tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, toggleSubtask } = useTasks(uid);
-  const { habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy } = useHabits(uid);
-  const { feed, postToFeed, likePost, commentOnPost }    = useFeed(roomId);
-  const { members, joinRoom, updateMemberStats }         = useSquadMembers(roomId);
-  const { moodLog, logMood }                             = useMoodLog(uid);
-  const { friends, sendFriendRequest, acceptFriend, removeFriend, inviteFriendToTask } = useFriends(uid);
-  const taskInvites = useTaskInvites(uid);
-  const { rewards, addReward, redeemReward, deleteReward, giftGold } = useGold(uid);
+  const { tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask } = useTasks(uid);
+  const { habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy }                        = useHabits(uid);
+  const { feed, postToFeed, likePost, commentOnPost, deletePost }                                 = useFeed(roomId);
+  const { members, joinRoom, updateMemberStats, pingPresence }                                                  = useSquadMembers(roomId);
+  const { moodLog, logMood }                                                                      = useMoodLog(uid);
+  const { friends, sendFriendRequest, acceptFriend, removeFriend, inviteFriendToTask }            = useFriends(uid);
+  const { invites: taskInvites, acceptInvite, declineInvite }                                     = useTaskInvites(uid);
+  const { rewards, addReward, redeemReward, deleteReward, giftGold }                              = useGold(uid);
 
   const [page,        setPage]        = useState("home");
   const [xpToast,     setXpToast]     = useState(null);
-  const [goldToast,   setGoldToast]   = useState(null);
   const [confetti,    setConfetti]    = useState(false);
   const [seeded,      setSeeded]      = useState(false);
-  const [viewProfile, setViewProfile] = useState(null); // uid to view
-  const [auditMsg,    setAuditMsg]    = useState(null);
+  const [viewProfile, setViewProfile] = useState(null);
+  const [toast,       setToast]       = useState(null);
+
+  // Map taskId → feedPostId so we can delete the post when task is un-completed
+  const taskFeedPosts = useRef({});
 
   useEffect(() => {
     if (!profile || !uid || seeded) return;
@@ -70,8 +72,21 @@ export default function App() {
     updateMemberStats(roomId, uid, profile.xp||0, profile.streak||0, profile.gold||0);
   }, [profile?.xp, profile?.streak, profile?.gold]);
 
+  // Ping presence every 2 minutes so others can see you're online
+  useEffect(() => {
+    if (!uid) return;
+    const interval = setInterval(() => pingPresence(roomId, uid), 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [uid]);
+
+  function showToast(msg, duration = 3500) {
+    setToast(msg);
+    setTimeout(() => setToast(null), duration);
+  }
+
+  // Award XP + gold, post to feed, return the feed post ID
   const awardXP = useCallback(async (amount, gold, label) => {
-    if (!uid || !profile) return;
+    if (!uid || !profile) return null;
     const newXP   = (profile.xp   || 0) + amount;
     const newGold = (profile.gold || 0) + gold;
     const oldLvl  = getLevel(profile.xp || 0);
@@ -80,48 +95,77 @@ export default function App() {
     setXpToast({ xp: amount, gold });
     if (amount >= 40) setConfetti(true);
     if (newLvl > oldLvl) {
-      setTimeout(() => setAuditMsg(`🎉 Level Up! You're now Level ${newLvl} — ${LEVEL_NAMES_LOCAL[newLvl-1]}!`), 800);
+      setTimeout(() => showToast(`🎉 Level Up! You're now Level ${newLvl} — ${LEVEL_NAMES[newLvl-1]}!`), 800);
     }
-    await feedPost(`earned +${amount}XP & +${gold}🪙 for: ${label} ✨`, "xp");
-  }, [uid, profile]);
-
-  const feedPost = useCallback(async (text, type = "update") => {
-    if (!profile) return;
-    await postToFeed(roomId, { userId: uid, userName: profile.name, userAvatar: profile.avatar, text, type });
+    const postId = await postToFeed(roomId, {
+      userId: uid, userName: profile.name, userAvatar: profile.avatar,
+      text: `earned +${amount}XP & +${gold}🪙 for: ${label} ✨`, type: "xp"
+    });
+    return postId;
   }, [uid, profile, roomId]);
 
+  const feedPost = useCallback(async (text, type = "update") => {
+    if (!profile) return null;
+    return await postToFeed(roomId, { userId: uid, userName: profile.name, userAvatar: profile.avatar, text, type });
+  }, [uid, profile, roomId]);
+
+  // ── Task complete / undo ──────────────────────────────────────────────────
   async function handleCompleteTask(task) {
-    if (task.done) { await toggleTask(task.id, false); return; }
-
-    // AI audit first
-    const audit = await aiAuditTask({ ...task, createdAtMs: task.createdAtMs });
-    const adjustedGold = Math.round((task.gold || 10) * (audit.goldMultiplier ?? 1));
-
-    if (!audit.approved || audit.goldMultiplier === 0) {
-      setAuditMsg(`⚠️ Task flagged: ${audit.reason}. No gold awarded.`);
-      await toggleTask(task.id, true);
-      await awardXP(task.xp || 20, 0, task.title);
+    if (task.done) {
+      // UNDO completion
+      await toggleTask(task.id, false);
+      // Refund XP and gold
+      const refundXP   = task.xp   || 20;
+      const refundGold = task.gold  || 10;
+      await updateProfile({
+        xp:   Math.max(0, (profile.xp   || 0) - refundXP),
+        gold: Math.max(0, (profile.gold || 0) - refundGold),
+      });
+      // Delete the feed post for this task if we have its ID
+      const feedPostId = taskFeedPosts.current[task.id];
+      if (feedPostId) {
+        await deletePost(roomId, feedPostId);
+        delete taskFeedPosts.current[task.id];
+      }
+      showToast(`↩ "${task.title}" uncompleted — XP & gold refunded`);
       return;
     }
 
-    if (audit.goldMultiplier < 1) {
-      setAuditMsg(`⚠️ ${audit.reason}. Reduced gold: ${adjustedGold}🪙`);
+    // AI audit
+    const audit = await aiAuditTask({ ...task, createdAtMs: task.createdAtMs || Date.now() });
+    const adjustedGold = Math.max(0, Math.round((task.gold || 10) * (audit.goldMultiplier ?? 1)));
+
+    if (audit.goldMultiplier === 0) {
+      showToast(`⚠️ ${audit.reason}. No gold awarded.`);
+    } else if (audit.goldMultiplier < 1) {
+      showToast(`⚠️ ${audit.reason}. Reduced gold: ${adjustedGold}🪙`);
     }
 
     await toggleTask(task.id, true);
-    await awardXP(task.xp || 20, adjustedGold, task.title);
-    await feedPost(`completed task: "${task.title}" ✅`, "task");
+    const isPrivate = task.isPublic === false;
+
+    // Award XP — for private tasks use a generic label so title doesn't appear in feed
+    const xpLabel   = isPrivate ? "a private task" : task.title;
+    const xpPostId  = await awardXP(task.xp || 20, adjustedGold, xpLabel);
+
+    // Only post task completion to feed if the task is public
+    let taskPostId = null;
+    if (!isPrivate) {
+      taskPostId = await feedPost(`completed task: "${task.title}" ✅`, "task");
+    }
+    taskFeedPosts.current[task.id] = taskPostId || xpPostId;
   }
 
+  // ── Habit check / undo ────────────────────────────────────────────────────
   async function handleCheckHabit(habit) {
     const result = await checkHabit(habit);
     if (result === false) return;
     if (result === "undone") {
-      setAuditMsg("Habit unchecked ↩");
+      showToast(`↩ "${habit.name}" unchecked`);
       return;
     }
     const goldBonus = Math.min(5 + Math.floor(result * 1.5), 30);
-    await awardXP(10 + (result || 0) * 2, goldBonus, `habit: ${habit.name}`);
+    await awardXP(10 + result * 2, goldBonus, `habit: ${habit.name}`);
     await feedPost(`completed habit: "${habit.name}" 🔥 (${result} day streak!)`, "habit");
   }
 
@@ -142,20 +186,13 @@ export default function App() {
   }
 
   async function handleGiftGold(toUid) {
-    // Simple gift flow — show prompt
-    const amount = parseInt(window.prompt(`How much gold to gift? (You have ${profile.gold||0}🪙)`));
-    if (!amount || isNaN(amount)) return;
+    const amountStr = window.prompt(`How much gold to gift? (You have ${profile.gold||0}🪙)`);
+    const amount = parseInt(amountStr);
+    if (!amount || isNaN(amount) || amount <= 0) return;
     const res = await giftGold(profile, toUid, amount, updateProfile);
-    if (res?.error) setAuditMsg(`Error: ${res.error}`);
-    else setAuditMsg(`Gift sent! 🎁 −${amount}🪙`);
+    if (res?.error) showToast(`Error: ${res.error}`);
+    else showToast(`Gift sent! 🎁 −${amount}🪙`);
   }
-
-  // Clear audit msg
-  useEffect(() => {
-    if (!auditMsg) return;
-    const t = setTimeout(() => setAuditMsg(null), 4000);
-    return () => clearTimeout(t);
-  }, [auditMsg]);
 
   if (user === undefined) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16 }}>
@@ -164,12 +201,13 @@ export default function App() {
     </div>
   );
 
-  if (!user) return <LoginScreen onLogin={login} />;
-  if (user && !profile?.name) return <Onboard firebaseUser={user} onCreate={handleCreate} />;
+  if (!user)               return <LoginScreen onLogin={login} />;
+  if (!profile?.name)      return <Onboard firebaseUser={user} onCreate={handleCreate} />;
 
   return (
     <div style={{ maxWidth:480, margin:"0 auto", minHeight:"100vh", display:"flex", flexDirection:"column" }}>
-      {/* Toasts */}
+
+      {/* XP + Gold toast */}
       {xpToast && (
         <div style={{ position:"fixed", top:72, right:16, zIndex:9999, display:"flex", flexDirection:"column", gap:6 }}>
           <XPToast xp={xpToast.xp} onDone={() => setXpToast(null)} />
@@ -178,19 +216,20 @@ export default function App() {
           )}
         </div>
       )}
+
       {confetti && <Confetti onDone={() => setConfetti(false)} />}
-      {auditMsg && (
-        <div style={{ position:"fixed", top:72, left:"50%", transform:"translateX(-50%)", zIndex:9998, background:"rgba(11,13,23,0.95)", border:"1px solid rgba(255,255,255,0.12)", color:"#E8E9F3", padding:"10px 20px", borderRadius:12, fontSize:13, maxWidth:320, textAlign:"center", backdropFilter:"blur(12px)" }}>
-          {auditMsg}
+
+      {/* General toast (audit messages, level ups, undo confirmations) */}
+      {toast && (
+        <div style={{ position:"fixed", top:72, left:"50%", transform:"translateX(-50%)", zIndex:9998, background:"rgba(15,17,32,0.97)", border:"1px solid rgba(255,255,255,0.12)", color:"#E8E9F3", padding:"10px 20px", borderRadius:12, fontSize:13, maxWidth:340, textAlign:"center", backdropFilter:"blur(12px)", boxShadow:"0 8px 32px rgba(0,0,0,0.4)" }}>
+          {toast}
         </div>
       )}
 
       {/* Profile viewer modal */}
       {viewProfile && (
         <ProfileViewer
-          targetUid={viewProfile}
-          currentUid={uid}
-          profile={profile}
+          targetUid={viewProfile} currentUid={uid} profile={profile}
           updateProfile={updateProfile}
           onClose={() => setViewProfile(null)}
           onSendFriendRequest={sendFriendRequest}
@@ -199,6 +238,7 @@ export default function App() {
       )}
 
       <TopBar profile={profile} page={page} />
+
       <div style={{ flex:1, padding:"16px 16px 90px", overflowY:"auto" }}>
         {page === "home" && (
           <HomePage profile={profile} tasks={tasks} habits={habits} moodLog={moodLog}
@@ -206,17 +246,15 @@ export default function App() {
             onCompleteTask={handleCompleteTask} setPage={setPage} />
         )}
         {page === "tasks" && (
-          <TasksPage tasks={tasks} addTask={addTask}
-            toggleTask={async (id, done) => {
-              const task = tasks.find(t => t.id === id);
-              if (task) await handleCompleteTask(task);
-            }}
+          <TasksPage
+            tasks={tasks} addTask={addTask}
+            toggleTask={(id, done) => { const t = tasks.find(t => t.id === id); if (t) handleCompleteTask(t); }}
             deleteTask={deleteTask} toggleTaskPrivacy={toggleTaskPrivacy}
-            addSubtask={addSubtask} toggleSubtask={toggleSubtask}
+            addSubtask={addSubtask} setSubtasks={setSubtasks} toggleSubtask={toggleSubtask} deleteSubtask={deleteSubtask}
             friends={friends} uid={uid}
             onInviteFriend={(friendUid, task) => {
               inviteFriendToTask(uid, friendUid, task);
-              setAuditMsg(`Invite sent! 📨`);
+              showToast("Invite sent! 📨");
             }}
           />
         )}
@@ -227,19 +265,23 @@ export default function App() {
         {page === "focus"   && <FocusPage onComplete={handleFocusComplete} profile={profile} />}
         {page === "squads"  && <SquadsPage profile={profile} uid={uid} />}
         {page === "social"  && (
-          <SocialPage feed={feed} members={members} profile={profile}
-            roomId={roomId} onPost={feedPost}
+          <SocialPage
+            feed={feed} members={members} profile={profile} roomId={roomId}
+            onPost={feedPost}
             onLike={(postId, liked) => likePost(roomId, postId, uid, liked)}
-            onComment={commentOnPost} uid={uid}
-            addTask={addTask} addHabit={addHabit}
+            onComment={commentOnPost}
+            onDeletePost={(postId) => deletePost(roomId, postId)}
+            uid={uid} addTask={addTask} addHabit={addHabit}
             friends={friends}
             sendFriendRequest={sendFriendRequest}
             acceptFriend={acceptFriend}
             removeFriend={removeFriend}
-            onViewProfile={(targetUid) => setViewProfile(targetUid)}
+            onViewProfile={setViewProfile}
             giftGold={giftGold}
             updateProfile={updateProfile}
             taskInvites={taskInvites}
+            onAcceptInvite={(id) => acceptInvite(uid, id)}
+            onDeclineInvite={(id) => declineInvite(uid, id)}
           />
         )}
         {page === "profile" && (
@@ -251,9 +293,8 @@ export default function App() {
           />
         )}
       </div>
+
       <BottomNav page={page} setPage={setPage} />
     </div>
   );
 }
-
-const LEVEL_NAMES_LOCAL = ["Seedling","Sprout","Bloom","Spark","Flame","Comet","Nova","Nebula","Galaxy","Cosmos","Legend","Mythic","Eternal"];

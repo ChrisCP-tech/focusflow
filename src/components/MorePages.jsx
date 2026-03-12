@@ -70,13 +70,22 @@ export function FocusPage({ onComplete, profile }) {
 }
 
 /* ═══════════════════════════════ SOCIAL PAGE ══════════════════════════════ */
-export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onComment, uid, addTask, addHabit, friends, sendFriendRequest, acceptFriend, removeFriend, onViewProfile, giftGold, updateProfile, taskInvites }) {
-  const [tab,      setTab]      = useState("feed");
-  const [text,     setText]     = useState("");
-  const [targetUid,setTargetUid]= useState("");
-  const [reqStatus,setReqStatus]= useState(null);
-  const pending  = (friends||[]).filter(f => f.status==="pending" && f.direction==="incoming");
-  const accepted = (friends||[]).filter(f => f.status==="accepted");
+export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onComment, onDeletePost, uid, addTask, addHabit, friends, sendFriendRequest, acceptFriend, removeFriend, onViewProfile, giftGold, updateProfile, taskInvites, onAcceptInvite, onDeclineInvite }) {
+  const [tab,       setTab]       = useState("feed");
+  const [text,      setText]      = useState("");
+  const [targetUid, setTargetUid] = useState("");
+  const [reqStatus, setReqStatus] = useState(null);
+
+  const pending        = (friends||[]).filter(f => f.status==="pending" && f.direction==="incoming");
+  const accepted       = (friends||[]).filter(f => f.status==="accepted");
+  const pendingInvites = (taskInvites||[]).filter(i => i.status === "pending");
+
+  // Online = last seen within 5 minutes
+  const now = Date.now();
+  const onlineMembers = (members||[]).filter(m => {
+    const lastSeen = m.lastSeen?.toMillis?.() || m.lastSeen?.seconds * 1000 || 0;
+    return now - lastSeen < 5 * 60 * 1000;
+  }).sort((a, b) => (b.xp||0) - (a.xp||0));
 
   function post() {
     if (!text.trim()) return;
@@ -91,46 +100,114 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     if (!res?.error) setTargetUid("");
   }
 
+  const tabs = [
+    ["feed",    "🌍 Global" + (feed.length ? "" : "")],
+    ["friends", "👥 Friends" + (pending.length ? ` (${pending.length})` : "")],
+    ["invites", "📨 Invites" + (pendingInvites.length ? ` (${pendingInvites.length})` : "")],
+  ];
+
   return (
     <div className="fadeUp">
-      <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:16 }}>Friends 👥</h2>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+        <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>Social 🌍</h2>
+        {onlineMembers.length > 0 && (
+          <div style={{ fontSize:11, color:"#55EFC4", fontWeight:600 }}>
+            {onlineMembers.length} online now
+          </div>
+        )}
+      </div>
 
       {/* Tabs */}
-      <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto" }}>
-        {[["feed","📣 Feed"],["friends","👥 Friends"+(pending.length?` (${pending.length})`:"")],["invites","📨 Invites"]].map(([k,l]) => (
+      <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:2 }}>
+        {tabs.map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{
-            padding:"7px 14px", borderRadius:10, fontSize:12, fontWeight:600, whiteSpace:"nowrap",
-            background:tab===k?"#6C63FF":"rgba(255,255,255,0.06)",
-            border:"none", color:tab===k?"#fff":"rgba(255,255,255,0.4)", cursor:"pointer"
+            padding:"7px 16px", borderRadius:20, fontSize:12, fontWeight:700, whiteSpace:"nowrap",
+            background: tab===k ? "#6C63FF" : "rgba(255,255,255,0.06)",
+            border: tab===k ? "none" : "1px solid rgba(255,255,255,0.08)",
+            color: tab===k ? "#fff" : "rgba(255,255,255,0.45)", cursor:"pointer",
+            transition:"all 0.15s"
           }}>{l}</button>
         ))}
       </div>
 
+      {/* ── GLOBAL FEED TAB ── */}
       {tab === "feed" && (
         <>
-          <Card style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", gap:8 }}>
-              <Input value={text} onChange={setText} placeholder="Share something… 🎉" style={{ flex:1 }} />
-              <Btn color="#6C63FF" onClick={post}>Post</Btn>
+          {/* Who's online row */}
+          {onlineMembers.length > 0 && (
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.35)", letterSpacing:"0.07em", marginBottom:10 }}>
+                ONLINE NOW
+              </div>
+              <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:4 }}>
+                {onlineMembers.map(m => {
+                  const isYou = m.uid === uid;
+                  return (
+                    <button key={m.uid} onClick={() => !isYou && onViewProfile(m.uid)}
+                      style={{ background:"none", border:"none", cursor:isYou?"default":"pointer", padding:0, flexShrink:0, textAlign:"center" }}>
+                      <div style={{ position:"relative", width:48, height:48, margin:"0 auto 4px" }}>
+                        <div style={{
+                          width:48, height:48, borderRadius:"50%",
+                          background:"linear-gradient(135deg,#6C63FF,#A29BFE)",
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                          fontSize:26, border:`2px solid ${isYou ? "#FDCB6E" : "#55EFC4"}`
+                        }}>{m.avatar}</div>
+                        {/* Green online dot */}
+                        <div style={{
+                          position:"absolute", bottom:1, right:1,
+                          width:12, height:12, borderRadius:"50%",
+                          background:"#55EFC4", border:"2px solid #0B0D17"
+                        }} />
+                      </div>
+                      <div style={{ fontSize:10, color: isYou ? "#FDCB6E" : "rgba(255,255,255,0.6)", maxWidth:52, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {isYou ? "You" : m.name?.split(" ")[0]}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Post box */}
+          <Card style={{ marginBottom:12, background:"rgba(108,99,255,0.08)", border:"1px solid rgba(108,99,255,0.2)" }}>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <div style={{ fontSize:28, flexShrink:0 }}>{profile.avatar}</div>
+              <Input value={text} onChange={setText} placeholder="Share with everyone… 🎉"
+                onKeyDown={e => e.key === "Enter" && post()}
+                style={{ flex:1, background:"rgba(255,255,255,0.04)", fontSize:13 }} />
+              <Btn color="#6C63FF" onClick={post} style={{ flexShrink:0 }}>Post</Btn>
             </div>
           </Card>
+
+          {/* Feed */}
+          {feed.length === 0 && (
+            <div style={{ textAlign:"center", padding:"48px 0", color:"rgba(255,255,255,0.2)" }}>
+              <div style={{ fontSize:40, marginBottom:8 }}>🌍</div>
+              <div style={{ fontSize:14 }}>Nothing yet — complete a task to be the first!</div>
+            </div>
+          )}
           {feed.map(p => (
             <FeedCard key={p.id} post={p} uid={uid} profile={profile}
               onLike={() => onLike(p.id, !p.likes?.includes(uid))}
               onComment={(c) => onComment(roomId, p.id, c)}
               onViewProfile={() => onViewProfile(p.userId)}
+              onDelete={p.userId === uid ? () => onDeletePost(p.id) : null}
               addTask={addTask} addHabit={addHabit}
             />
           ))}
         </>
       )}
 
+      {/* ── FRIENDS TAB ── */}
       {tab === "friends" && (
         <>
           <Card style={{ marginBottom:14 }}>
-            <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"rgba(255,255,255,0.5)" }}>ADD BY USER ID</div>
+            <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>ADD FRIEND BY USER ID</div>
             <div style={{ display:"flex", gap:8 }}>
-              <Input value={targetUid} onChange={setTargetUid} placeholder="Paste friend's User ID…" style={{ flex:1, fontSize:12 }} />
+              <Input value={targetUid} onChange={setTargetUid} placeholder="Paste their User ID…"
+                onKeyDown={e => e.key==="Enter" && handleSendRequest()}
+                style={{ flex:1, fontSize:12 }} />
               <Btn small color="#6C63FF" onClick={handleSendRequest} disabled={reqStatus==="loading"}>Add</Btn>
             </div>
             {reqStatus?.startsWith("error:") && <div style={{ fontSize:11, color:"#FF6B6B", marginTop:6 }}>{reqStatus.replace("error:","")}</div>}
@@ -139,11 +216,11 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
 
           {pending.length > 0 && (
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"#FDCB6E" }}>PENDING REQUESTS</div>
+              <div style={{ fontSize:11, fontWeight:700, color:"#FDCB6E", marginBottom:8, letterSpacing:"0.05em" }}>PENDING REQUESTS</div>
               {pending.map(f => (
                 <Card key={f.uid} style={{ marginBottom:8 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ fontSize:26 }}>{f.avatar}</div>
+                    <div style={{ fontSize:28 }}>{f.avatar}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
                       <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>wants to be friends</div>
@@ -159,9 +236,10 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
           )}
 
           {accepted.length === 0 && pending.length === 0 && (
-            <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>
+            <div style={{ textAlign:"center", padding:"48px 0", color:"rgba(255,255,255,0.2)" }}>
               <div style={{ fontSize:40, marginBottom:8 }}>👥</div>
-              <div>No friends yet — add by User ID</div>
+              <div>No friends yet</div>
+              <div style={{ fontSize:12, marginTop:6 }}>Go to 🌍 Global, tap someone's avatar to add them!</div>
             </div>
           )}
 
@@ -175,29 +253,50 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
         </>
       )}
 
+      {/* ── INVITES TAB ── */}
       {tab === "invites" && (
-        <TaskInvitesTab invites={taskInvites || []} />
+        <TaskInvitesTab invites={taskInvites || []} onAccept={onAcceptInvite} onDecline={onDeclineInvite} />
       )}
     </div>
   );
 }
 
-function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }) {
-  const [showGift,  setShowGift]  = useState(false);
-  const [giftAmt,   setGiftAmt]   = useState(10);
-  const [giftStatus,setGiftStatus]= useState(null);
-  const [showTasks, setShowTasks] = useState(false);
-  const [tasks,     setTasks]     = useState([]);
 
+function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }) {
+  const [showGift,     setShowGift]     = useState(false);
+  const [giftAmt,      setGiftAmt]      = useState(10);
+  const [giftStatus,   setGiftStatus]   = useState(null);
+  const [showTasks,    setShowTasks]    = useState(false);
+  const [tasks,        setTasks]        = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError,   setTasksError]   = useState(null);
+
+  // Live subscription to friend's public tasks — only when panel is open
   useEffect(() => {
     if (!showTasks) return;
-    // Lazy load friend's public tasks via onSnapshot would need hook — simple fetch here
-    import("firebase/firestore").then(({ collection, query, where, orderBy, limit, getDocs }) => {
-      import("../firebase/config").then(({ db }) => {
-        getDocs(query(collection(db,"users",f.uid,"tasks"), where("isPublic","==",true), orderBy("createdAt","desc"), limit(10)))
-          .then(snap => setTasks(snap.docs.map(d => ({id:d.id,...d.data()}))));
-      });
+    setTasksLoading(true);
+    setTasksError(null);
+    let unsub;
+    Promise.all([
+      import("firebase/firestore"),
+      import("../firebase/config")
+    ]).then(([{ collection, query, where, limit, onSnapshot }, { db }]) => {
+      unsub = onSnapshot(
+        query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
+        snap => {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+          setTasks(list);
+          setTasksLoading(false);
+        },
+        err => {
+          console.error("friend tasks:", err);
+          setTasksError("Could not load tasks — check Firestore rules");
+          setTasksLoading(false);
+        }
+      );
     });
+    return () => unsub?.();
   }, [showTasks, f.uid]);
 
   async function sendGift() {
@@ -209,17 +308,17 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
     <Card style={{ marginBottom:10 }}>
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0 }}>
-          <div style={{ width:40, height:40, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{f.avatar}</div>
+          <div style={{ width:42, height:42, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{f.avatar}</div>
         </button>
         <div style={{ flex:1, cursor:"pointer" }} onClick={onViewProfile}>
           <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Tap to view profile</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Tap name to view profile</div>
         </div>
-        <div style={{ display:"flex", gap:6 }}>
-          <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift</Btn>
-          <Btn small ghost color="#6C63FF" onClick={() => setShowTasks(v=>!v)}>Tasks</Btn>
-          <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove</Btn>
-        </div>
+      </div>
+      <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
+        <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift</Btn>
+        <Btn small ghost color="#6C63FF" onClick={() => setShowTasks(v=>!v)}>{showTasks ? "Hide Tasks" : "📋 Tasks"}</Btn>
+        <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove</Btn>
       </div>
 
       {showGift && (
@@ -234,14 +333,19 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
       )}
 
       {showTasks && (
-        <div style={{ marginTop:10 }}>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:6 }}>PUBLIC TASKS</div>
-          {tasks.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>No public tasks</div>}
+        <div style={{ marginTop:12, borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10 }}>
+          <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>PUBLIC TASKS</div>
+          {tasksLoading && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>Loading…</div>}
+          {tasksError && <div style={{ fontSize:11, color:"#FF6B6B" }}>{tasksError}</div>}
+          {!tasksLoading && !tasksError && tasks.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>No public tasks yet</div>}
           {tasks.map(t => (
-            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
-              <div style={{ width:14, height:14, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
-              <span style={{ fontSize:12, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
-              <span style={{ marginLeft:"auto", fontSize:10, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
+            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
+              <span style={{ fontSize:13, flex:1, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
+              <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                <span style={{ fontSize:10, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
+                <span style={{ fontSize:10, color:"#FDCB6E" }}>+{t.gold||10}🪙</span>
+              </div>
             </div>
           ))}
         </div>
@@ -250,25 +354,56 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
   );
 }
 
-function TaskInvitesTab({ invites }) {
+function TaskInvitesTab({ invites, onAccept, onDecline }) {
   if (invites.length === 0) return (
     <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>
       <div style={{ fontSize:40, marginBottom:8 }}>📨</div>
       <div>No task invites yet</div>
+      <div style={{ fontSize:12, marginTop:6 }}>Friends can invite you to tasks from their Tasks page</div>
     </div>
   );
-  return invites.map(inv => (
-    <Card key={inv.id} style={{ marginBottom:10 }}>
-      <div style={{ fontSize:13, fontWeight:600 }}>{inv.taskTitle}</div>
-      <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginTop:4 }}>Invited by {inv.fromUid} · +{inv.taskXp}XP</div>
-      <div style={{ fontSize:11, color:inv.status==="pending"?"#FDCB6E":"#55EFC4", marginTop:4 }}>Status: {inv.status}</div>
-    </Card>
-  ));
+  return (
+    <>
+      {invites.map(inv => (
+        <Card key={inv.id} style={{ marginBottom:10, borderLeft:`3px solid ${inv.status==="accepted"?"#55EFC4":"#FDCB6E"}` }}>
+          <div style={{ fontWeight:600, fontSize:14, marginBottom:4 }}>{inv.taskTitle}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:8 }}>
+            From a friend · +{inv.taskXp||20}XP · +{inv.taskGold||10}🪙
+          </div>
+          {inv.status === "pending" ? (
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => onAccept(inv.id)}>✓ Accept</Btn>
+              <Btn small ghost color="#FF6B6B" onClick={() => onDecline(inv.id)}>Decline</Btn>
+            </div>
+          ) : (
+            <div style={{ fontSize:12, color:"#55EFC4", fontWeight:600 }}>Accepted ✓</div>
+          )}
+        </Card>
+      ))}
+    </>
+  );
 }
 
-function FeedCard({ post: p, uid, onLike, onComment, onViewProfile, addTask, addHabit }) {
+function FeedCard({ post: p, uid, onLike, onComment, onViewProfile, onDelete }) {
   const [showComments, setShowComments] = useState(false);
   const [commentText,  setCommentText]  = useState("");
+  const isOwn = p.userId === uid;
+
+  // Per-type accent colors and icons (richer than the basic TYPE_ICONS)
+  const typeStyle = {
+    xp:      { bg:"rgba(253,203,110,0.07)", border:"rgba(253,203,110,0.15)", badge:"#FDCB6E",  label:"XP Earned"     },
+    task:    { bg:"rgba(85,239,196,0.07)",  border:"rgba(85,239,196,0.15)",  badge:"#55EFC4",  label:"Task Done"     },
+    habit:   { bg:"rgba(255,107,107,0.07)", border:"rgba(255,107,107,0.15)", badge:"#FF6B6B",  label:"Habit Streak"  },
+    mood:    { bg:"rgba(162,155,254,0.07)", border:"rgba(162,155,254,0.15)", badge:"#A29BFE",  label:"Mood"          },
+    join:    { bg:"rgba(116,185,255,0.07)", border:"rgba(116,185,255,0.15)", badge:"#74B9FF",  label:"Joined"        },
+    message: { bg:"rgba(255,255,255,0.03)", border:"rgba(255,255,255,0.06)", badge:"#E8E9F3",  label:""              },
+    gold:    { bg:"rgba(253,203,110,0.07)", border:"rgba(253,203,110,0.15)", badge:"#FDCB6E",  label:"Gold"          },
+  };
+  const ts = typeStyle[p.type] || typeStyle.message;
+  const icon = TYPE_ICONS[p.type] || "💬";
+  const timeStr = p.ts?.toDate
+    ? p.ts.toDate().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" })
+    : "";
 
   function submitComment() {
     if (!commentText.trim()) return;
@@ -277,36 +412,93 @@ function FeedCard({ post: p, uid, onLike, onComment, onViewProfile, addTask, add
   }
 
   return (
-    <div style={{ padding:"12px 14px", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:12, marginBottom:8 }}>
+    <div style={{
+      padding:"12px 14px",
+      background: ts.bg,
+      border:`1px solid ${ts.border}`,
+      borderRadius:14, marginBottom:10,
+      transition:"opacity 0.2s"
+    }}>
       <div style={{ display:"flex", gap:10 }}>
-        <button onClick={onViewProfile} style={{ background:"none", border:"none", padding:0, cursor:"pointer" }}>
-          <div style={{ width:34, height:34, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{p.userAvatar||"🌀"}</div>
+        {/* Avatar — tappable to view profile */}
+        <button onClick={onViewProfile} style={{ background:"none", border:"none", padding:0, cursor:"pointer", flexShrink:0 }}>
+          <div style={{
+            width:40, height:40, borderRadius:"50%",
+            background:"linear-gradient(135deg,#6C63FF,#A29BFE)",
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:22,
+            border:`2px solid ${ts.badge}33`
+          }}>{p.userAvatar || "🌀"}</div>
         </button>
-        <div style={{ flex:1 }}>
-          <div style={{ display:"flex", justifyContent:"space-between" }}>
-            <span style={{ fontWeight:600, fontSize:13, cursor:"pointer" }} onClick={onViewProfile}>{p.userName}</span>
-            <span style={{ fontSize:10, color:"rgba(255,255,255,0.2)" }}>{p.ts?.toDate ? p.ts.toDate().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : ""}</span>
+
+        <div style={{ flex:1, minWidth:0 }}>
+          {/* Header row */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:6, marginBottom:4 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+              <span style={{ fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+                onClick={onViewProfile}>{p.userName}</span>
+              {ts.label && (
+                <span style={{
+                  fontSize:9, fontWeight:800, letterSpacing:"0.06em",
+                  background:`${ts.badge}22`, color:ts.badge,
+                  padding:"2px 6px", borderRadius:6, whiteSpace:"nowrap", flexShrink:0
+                }}>{ts.label}</span>
+              )}
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0 }}>
+              <span style={{ fontSize:10, color:"rgba(255,255,255,0.2)" }}>{timeStr}</span>
+              {isOwn && onDelete && (
+                <button onClick={onDelete} style={{
+                  background:"none", border:"none", color:"rgba(255,255,255,0.18)",
+                  cursor:"pointer", fontSize:13, padding:0, lineHeight:1
+                }} title="Delete post">✕</button>
+              )}
+            </div>
           </div>
-          <div style={{ fontSize:13, color:TYPE_COLORS[p.type]||"rgba(255,255,255,0.7)", marginTop:2, lineHeight:1.4 }}>
-            {TYPE_ICONS[p.type]||""} {p.text}
+
+          {/* Post body */}
+          <div style={{ fontSize:13, color:"rgba(255,255,255,0.82)", lineHeight:1.5 }}>
+            {icon} {p.text}
           </div>
-          <div style={{ display:"flex", gap:12, marginTop:8 }}>
-            <button onClick={onLike} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:p.likes?.includes(uid)?"#FF6B6B":"rgba(255,255,255,0.3)", padding:0, fontFamily:"inherit" }}>❤️ {p.likes?.length||0}</button>
-            <button onClick={() => setShowComments(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:"rgba(255,255,255,0.3)", padding:0, fontFamily:"inherit" }}>💬 {p.comments?.length||0}</button>
+
+          {/* Actions */}
+          <div style={{ display:"flex", gap:14, marginTop:8, alignItems:"center" }}>
+            <button onClick={onLike} style={{
+              background:"none", border:"none", cursor:"pointer", fontSize:12, padding:0,
+              color: p.likes?.includes(uid) ? "#FF6B6B" : "rgba(255,255,255,0.3)",
+              fontFamily:"inherit", display:"flex", alignItems:"center", gap:4
+            }}>
+              ❤️ <span>{p.likes?.length || 0}</span>
+            </button>
+            <button onClick={() => setShowComments(v => !v)} style={{
+              background:"none", border:"none", cursor:"pointer", fontSize:12, padding:0,
+              color: showComments ? "#A29BFE" : "rgba(255,255,255,0.3)",
+              fontFamily:"inherit", display:"flex", alignItems:"center", gap:4
+            }}>
+              💬 <span>{p.comments?.length || 0}</span>
+            </button>
+            {/* Add friend shortcut — only show for other people's posts */}
+            {!isOwn && (
+              <button onClick={onViewProfile} style={{
+                background:"none", border:"none", cursor:"pointer", fontSize:11, padding:0,
+                color:"rgba(108,99,255,0.6)", fontFamily:"inherit"
+              }}>+ Add</button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Comments */}
       {showComments && (
-        <div style={{ marginTop:10, paddingLeft:44 }}>
-          {(p.comments||[]).map((c,i) => (
-            <div key={i} style={{ display:"flex", gap:6, marginBottom:6 }}>
-              <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"5px 8px", flex:1 }}>
-                <div style={{ fontSize:12 }}>{c.text}</div>
-              </div>
+        <div style={{ marginTop:10, paddingLeft:50 }}>
+          {(p.comments || []).map((c, i) => (
+            <div key={i} style={{ background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"5px 10px", marginBottom:6, fontSize:12 }}>
+              {c.text}
             </div>
           ))}
           <div style={{ display:"flex", gap:6 }}>
-            <Input value={commentText} onChange={setCommentText} placeholder="Comment…" style={{ flex:1, fontSize:12, padding:"6px 10px" }} />
+            <Input value={commentText} onChange={setCommentText}
+              onKeyDown={e => e.key==="Enter" && submitComment()}
+              placeholder="Comment…" style={{ flex:1, fontSize:12, padding:"6px 10px" }} />
             <Btn small color="#6C63FF" onClick={submitComment}>↑</Btn>
           </div>
         </div>
@@ -314,6 +506,7 @@ function FeedCard({ post: p, uid, onLike, onComment, onViewProfile, addTask, add
     </div>
   );
 }
+
 
 /* ═════════════════════════════ PROFILE PAGE ═══════════════════════════════ */
 export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, onLogout, uid, rewards, addReward, redeemReward, deleteReward }) {

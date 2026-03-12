@@ -34,12 +34,12 @@ export function streakColor(level) {
 
 // Level unlock gates
 export const LEVEL_UNLOCKS = {
-  1:  { maxSquads: 0, streakShields: 0, canCreateSquad: false },
-  3:  { maxSquads: 0, streakShields: 1, canCreateSquad: false },
-  5:  { maxSquads: 1, streakShields: 1, canCreateSquad: true  },
-  7:  { maxSquads: 2, streakShields: 2, canCreateSquad: true  },
-  9:  { maxSquads: 3, streakShields: 2, canCreateSquad: true  },
-  11: { maxSquads: 5, streakShields: 3, canCreateSquad: true  },
+  1:  { maxSquads: 1, streakShields: 0, canCreateSquad: true  }, // everyone gets 1 free squad
+  3:  { maxSquads: 1, streakShields: 1, canCreateSquad: true  },
+  5:  { maxSquads: 2, streakShields: 1, canCreateSquad: true  },
+  7:  { maxSquads: 3, streakShields: 2, canCreateSquad: true  },
+  9:  { maxSquads: 4, streakShields: 2, canCreateSquad: true  },
+  11: { maxSquads: 6, streakShields: 3, canCreateSquad: true  },
 };
 export function getLevelUnlocks(level) {
   const keys = Object.keys(LEVEL_UNLOCKS).map(Number).sort((a,b)=>b-a);

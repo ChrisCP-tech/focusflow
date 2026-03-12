@@ -1,61 +1,15 @@
 // src/components/Pages.jsx
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { MOODS, TAGS, HABIT_ICONS, HABIT_COLORS, today, getLevel, getLevelUnlocks, streakColor } from "../utils";
+import { aiSuggestXP, aiBreakdownTask, aiAuditTask } from "../ai";
+
+export { aiAuditTask };
 
 const selectStyle = {
   background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
   borderRadius:8, padding:"8px 10px", color:"#E8E9F3", width:"100%", fontSize:13, fontFamily:"inherit"
 };
-
-/* ─── AI Helpers ─────────────────────────────────────────────────────────── */
-async function aiSuggestXP(title) {
-  if (!title || title.length < 4) return null;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-20250514", max_tokens:100,
-        messages:[{ role:"user", content:`You are an XP suggester for a productivity app. Based on this task title, suggest an XP value (10, 20, 30, 50, or 100) based on difficulty and importance. Also suggest gold (5, 10, 15, 25, 50). Task: "${title}". Reply ONLY with JSON: {"xp": 20, "gold": 10, "reason": "short reason"}` }]
-      })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || "{}";
-    return JSON.parse(text.replace(/```json|```/g,"").trim());
-  } catch { return null; }
-}
-
-async function aiBreakdownTask(title, desc) {
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-20250514", max_tokens:500,
-        messages:[{ role:"user", content:`Break this task into 4-6 clear actionable subtasks. Task: "${title}"${desc ? `. Details: ${desc}` : ""}. Reply ONLY with JSON array: [{"title":"subtask"}]. No other text.` }]
-      })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || "[]";
-    return JSON.parse(text.replace(/```json|```/g,"").trim());
-  } catch { return []; }
-}
-
-async function aiAuditTask(task) {
-  const ageMs = Date.now() - (task.createdAtMs || Date.now());
-  if (ageMs < 120000) return { approved: false, reason: "Task completed too quickly. Gold withheld.", goldMultiplier: 0 };
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-20250514", max_tokens:150,
-        messages:[{ role:"user", content:`Audit this completed task for legitimacy in a productivity app. Task: "${task.title}". Description: "${task.desc || "none"}". XP claimed: ${task.xp}. Gold claimed: ${task.gold || 10}. Is this a real task or potential exploit? Reply ONLY with JSON: {"approved": true, "goldMultiplier": 1.0, "reason": "brief reason"}. goldMultiplier should be 0 for obvious exploits, 0.5 for suspicious, 1.0 for legitimate, 1.25 for impressive tasks.` }]
-      })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || "{}";
-    return JSON.parse(text.replace(/```json|```/g,"").trim());
-  } catch { return { approved: true, goldMultiplier: 1.0, reason: "Audit unavailable" }; }
-}
 
 /* ═══════════════════════════════ HOME PAGE ════════════════════════════════ */
 export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit, onCompleteTask, setPage }) {
@@ -186,16 +140,17 @@ function MiniHabit({ habit, onCheck }) {
 }
 
 /* ═══════════════════════════════ TASKS PAGE ═══════════════════════════════ */
-export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, toggleSubtask, friends, uid, onInviteFriend }) {
+export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask, friends, uid, onInviteFriend }) {
   const [showForm,  setShowForm]  = useState(false);
   const [filter,    setFilter]    = useState("all");
   const [form,      setForm]      = useState({ title:"", desc:"", priority:"medium", tag:"", xp:20, gold:10, dueTime:"", isPublic:true });
   const [aiXP,      setAiXP]      = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiBreakId, setAiBreakId] = useState(null);
+  const [aiCooldowns, setAiCooldowns] = useState({});
   const debounceRef = useRef(null);
 
-  // AI XP suggestion as user types
+  // AI XP suggestion as user types (debounced 900ms)
   useEffect(() => {
     if (!form.title || form.title.length < 5) { setAiXP(null); return; }
     clearTimeout(debounceRef.current);
@@ -220,9 +175,19 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
   }
 
   async function handleAIBreakdown(task) {
+    // If cached result already exists don't re-run API
+    if (task.aiBreakdownDone && (task.subtasks || []).length > 0) return;
+    // 10-second cooldown prevents accidental double-click double-spend
+    const lastRun = aiCooldowns[task.id] || 0;
+    if (Date.now() - lastRun < 10000) return;
+
     setAiBreakId(task.id);
-    const subtasks = await aiBreakdownTask(task.title, task.desc);
-    for (const s of subtasks) await addSubtask(task.id, { title: s.title });
+    setAiCooldowns(prev => ({ ...prev, [task.id]: Date.now() }));
+    const result = await aiBreakdownTask(task.title, task.desc);
+    if (result && result.length > 0) {
+      // One bulk write — no race condition from sequential getDoc/updateDoc calls
+      await setSubtasks(task.id, result.map(s => s.title), true);
+    }
     setAiBreakId(null);
   }
 
@@ -300,10 +265,11 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
 
       {visible.map(task => (
         <TaskCard key={task.id} task={task}
-          onToggle={() => toggleTask(task.id, !task.done)}
+          onToggle={() => toggleTask(task.id, task.done)}
           onDelete={() => deleteTask(task.id)}
           onPrivacyToggle={() => toggleTaskPrivacy(task.id, !task.isPublic)}
           onAddSubtask={(title) => addSubtask(task.id, { title })}
+          onDeleteSubtask={(stId) => deleteSubtask(task.id, stId)}
           onToggleSubtask={(stId) => toggleSubtask(task.id, stId)}
           onAIBreakdown={() => handleAIBreakdown(task)}
           aiBreaking={aiBreakId === task.id}
@@ -316,7 +282,7 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
   );
 }
 
-function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend }) {
+function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onDeleteSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend }) {
   const [expanded,   setExpanded]   = useState(false);
   const [newSub,     setNewSub]     = useState("");
   const [showInvite, setShowInvite] = useState(false);
@@ -330,23 +296,55 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onT
     onAddSubtask(newSub.trim());
     setNewSub("");
   }
+  function handleSubKeyDown(e) {
+    if (e.key === "Enter") submitSub();
+  }
 
   return (
-    <Card style={{ marginBottom:10, opacity:task.done?0.65:1, borderLeft:`3px solid ${priorityColors[task.priority]||"#6C63FF"}` }}>
+    <Card style={{
+      marginBottom:10,
+      opacity: task.done ? 0.7 : 1,
+      borderLeft:`3px solid ${task.done ? "#55EFC4" : (priorityColors[task.priority]||"#6C63FF")}`,
+      background: task.done ? "rgba(85,239,196,0.04)" : undefined
+    }}>
       <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+        {/* Checkbox / Done indicator */}
         <button onClick={onToggle} style={{
-          width:22, height:22, borderRadius:6, border:`2px solid ${task.done?"#55EFC4":"rgba(255,255,255,0.2)"}`,
-          background:task.done?"#55EFC4":"transparent", cursor:"pointer", flexShrink:0,
+          width:22, height:22, borderRadius:6,
+          border:`2px solid ${task.done ? "#55EFC4" : "rgba(255,255,255,0.2)"}`,
+          background: task.done ? "#55EFC4" : "transparent",
+          cursor:"pointer", flexShrink:0,
           display:"flex", alignItems:"center", justifyContent:"center", marginTop:1
         }}>
           {task.done && <span style={{ color:"#0B0D17", fontSize:12, fontWeight:900 }}>✓</span>}
         </button>
-        <div style={{ flex:1, cursor:"pointer" }} onClick={() => setExpanded(v=>!v)}>
-          <div style={{ fontWeight:600, fontSize:14, textDecoration:task.done?"line-through":"none", color:task.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{task.title}</div>
-          {task.desc && <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginTop:2 }}>{task.desc}</div>}
-          {task.dueTime && <div style={{ fontSize:11, color:"#74B9FF", marginTop:2 }}>⏰ {task.dueTime}</div>}
+
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:6 }}>
+            <div style={{ cursor:"pointer", flex:1 }} onClick={() => !task.done && setExpanded(v=>!v)}>
+              <div style={{ fontWeight:600, fontSize:14, textDecoration:task.done?"line-through":"none", color:task.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{task.title}</div>
+              {task.desc && !task.done && <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginTop:2 }}>{task.desc}</div>}
+              {task.dueTime && !task.done && <div style={{ fontSize:11, color:"#74B9FF", marginTop:2 }}>⏰ {task.dueTime}</div>}
+            </div>
+            {/* Undo button — visible when done */}
+            {task.done && (
+              <button onClick={onToggle} style={{
+                background:"rgba(255,107,107,0.12)", border:"1px solid rgba(255,107,107,0.3)",
+                borderRadius:8, color:"#FF6B6B", fontSize:11, fontWeight:600, cursor:"pointer",
+                padding:"3px 9px", whiteSpace:"nowrap", fontFamily:"inherit", flexShrink:0
+              }}>↩ Undo</button>
+            )}
+            {/* Expand arrow — visible when not done */}
+            {!task.done && (
+              <button onClick={() => setExpanded(v=>!v)} style={{
+                background:"none", border:"none", color:"rgba(255,255,255,0.25)",
+                cursor:"pointer", fontSize:12, padding:0, flexShrink:0
+              }}>{expanded ? "▲" : "▼"}</button>
+            )}
+          </div>
+
           {/* Progress bar */}
-          {subtasks.length > 0 && (
+          {subtasks.length > 0 && !task.done && (
             <div style={{ marginTop:8 }}>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.35)", marginBottom:3 }}>
                 <span>{subtasks.filter(s=>s.done).length}/{subtasks.length} subtasks</span>
@@ -357,46 +355,66 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onT
               </div>
             </div>
           )}
-          <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" }}>
-            {task.tag && <Tag label={`#${task.tag}`} color="#6C63FF" />}
-            <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.xp||20}XP</span>
-            <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.gold||10}🪙</span>
-            <span style={{ fontSize:11, color:task.isPublic!==false?"#55EFC4":"rgba(255,255,255,0.2)" }}>{task.isPublic!==false?"🌐":"🔒"}</span>
-          </div>
+
+          {!task.done && (
+            <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap", alignItems:"center" }}>
+              {task.tag && <Tag label={`#${task.tag}`} color="#6C63FF" />}
+              <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.xp||20}XP</span>
+              <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.gold||10}🪙</span>
+              <span style={{ fontSize:11, color:task.isPublic!==false?"#55EFC4":"rgba(255,255,255,0.3)" }}>{task.isPublic!==false?"🌐":"🔒"}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {expanded && (
+      {/* Expanded details — only when not done */}
+      {expanded && !task.done && (
         <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-          {/* AI Breakdown */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>SUBTASKS</div>
-            <Btn small ghost color="#A29BFE" onClick={onAIBreakdown} disabled={aiBreaking}>
-              {aiBreaking ? "✨ Thinking…" : "✨ AI Breakdown"}
+            <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>
+              SUBTASKS {subtasks.length > 0 && `(${subtasks.filter(s=>s.done).length}/${subtasks.length})`}
+            </div>
+            <Btn small ghost color={task.aiBreakdownDone ? "#55EFC4" : "#A29BFE"}
+              onClick={onAIBreakdown}
+              disabled={aiBreaking || (task.aiBreakdownDone && subtasks.length > 0)}
+              title={task.aiBreakdownDone ? "Already generated — edit manually below" : "Let AI break this into subtasks"}
+            >
+              {aiBreaking ? "✨ Thinking…" : task.aiBreakdownDone && subtasks.length > 0 ? "✓ AI Done" : "✨ AI Breakdown"}
             </Btn>
           </div>
           {subtasks.map(s => (
-            <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+            <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
               <button onClick={() => onToggleSubtask(s.id)} style={{
-                width:16, height:16, borderRadius:4, border:`2px solid ${s.done?"#55EFC4":"rgba(255,255,255,0.25)"}`,
+                width:18, height:18, borderRadius:4,
+                border:`2px solid ${s.done?"#55EFC4":"rgba(255,255,255,0.25)"}`,
                 background:s.done?"#55EFC4":"transparent", cursor:"pointer", flexShrink:0,
                 display:"flex", alignItems:"center", justifyContent:"center", padding:0
               }}>
-                {s.done && <span style={{ color:"#0B0D17", fontSize:9, fontWeight:900 }}>✓</span>}
+                {s.done && <span style={{ color:"#0B0D17", fontSize:10, fontWeight:900 }}>✓</span>}
               </button>
               <span style={{ fontSize:13, flex:1, textDecoration:s.done?"line-through":"none", color:s.done?"rgba(255,255,255,0.35)":"#E8E9F3" }}>{s.title}</span>
+              <button onClick={() => onDeleteSubtask(s.id)} style={{
+                background:"none", border:"none", color:"rgba(255,255,255,0.15)",
+                cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, flexShrink:0
+              }} title="Remove subtask">✕</button>
             </div>
           ))}
-          <div style={{ display:"flex", gap:6, marginTop:8 }}>
-            <Input value={newSub} onChange={setNewSub} placeholder="Add subtask…" style={{ flex:1, fontSize:12, padding:"6px 10px" }} />
+          {/* Manual subtask input */}
+          <div style={{ display:"flex", gap:6, marginTop:10 }}>
+            <Input
+              value={newSub}
+              onChange={setNewSub}
+              onKeyDown={handleSubKeyDown}
+              placeholder="Add a subtask… (Enter to add)"
+              style={{ flex:1, fontSize:12, padding:"7px 10px" }}
+            />
             <Btn small color="#6C63FF" onClick={submitSub}>+</Btn>
           </div>
 
-          {/* Invite friends */}
           {accepted.length > 0 && (
             <div style={{ marginTop:10 }}>
               <button onClick={() => setShowInvite(v=>!v)} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
-                👥 Invite friends to this task {showInvite?"▲":"▼"}
+                👥 Invite friends {showInvite?"▲":"▼"}
               </button>
               {showInvite && (
                 <div style={{ marginTop:8, display:"flex", flexWrap:"wrap", gap:6 }}>
@@ -410,7 +428,7 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onT
             </div>
           )}
 
-          <div style={{ display:"flex", justifyContent:"space-between", marginTop:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", marginTop:12 }}>
             <button onClick={onPrivacyToggle} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
               {task.isPublic!==false ? "🌐 Make private" : "🔒 Make public"}
             </button>

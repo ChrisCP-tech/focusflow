@@ -2,29 +2,50 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    match /users/{uid} {
+    match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == userId;
+
       match /tasks/{taskId} {
-        allow read: if request.auth != null && (request.auth.uid == uid || resource.data.isPublic == true);
-        allow write: if request.auth != null && request.auth.uid == uid;
+        // Owner full access
+        allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+        // Any logged-in user can LIST and GET public tasks (needed for collection queries)
+        allow get:  if request.auth != null && resource.data.isPublic == true;
+        allow list: if request.auth != null;
       }
+
       match /habits/{habitId} {
-        allow read: if request.auth != null && (request.auth.uid == uid || resource.data.isPublic == true);
-        allow write: if request.auth != null && request.auth.uid == uid;
+        allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+        allow get:  if request.auth != null && resource.data.isPublic == true;
+        allow list: if request.auth != null;
       }
+
       match /moods/{moodId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+
       match /friends/{friendId} {
-        allow read: if request.auth != null && request.auth.uid == uid;
+        allow read: if request.auth != null && request.auth.uid == userId;
         allow write: if request.auth != null;
+      }
+
+      match /taskInvites/{inviteId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null;
+      }
+
+      match /rewards/{rewardId} {
+        allow read, write, delete: if request.auth != null && request.auth.uid == userId;
       }
     }
 
     match /rooms/{roomId} {
-      match /feed/{postId} { allow read, write: if request.auth != null; }
-      match /members/{memberId} { allow read, write: if request.auth != null; }
+      match /feed/{postId} {
+        allow read, write, delete: if request.auth != null;
+      }
+      match /members/{memberId} {
+        allow read, write: if request.auth != null;
+      }
     }
 
     match /squads/{squadId} {
@@ -32,14 +53,15 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && request.auth.uid in resource.data.memberIds;
       allow delete: if request.auth != null && request.auth.uid == resource.data.ownerId;
-      match /feed/{postId} { allow read, write: if request.auth != null; }
-      match /tasks/{taskId} { allow read, write: if request.auth != null; }
-      match /challenges/{challengeId} { allow read, write: if request.auth != null; }
+
+      match /feed/{postId}            { allow read, write, delete: if request.auth != null; }
+      match /tasks/{taskId}           { allow read, write, delete: if request.auth != null; }
+      match /challenges/{challengeId} { allow read, write, delete: if request.auth != null; }
     }
 
     match /pomodoroSessions/{sessionId} {
       allow read, write: if request.auth != null;
-      match /messages/{msgId} { allow read, write: if request.auth != null; }
+      match /messages/{msgId}   { allow read, write: if request.auth != null; }
       match /participants/{uid} { allow read, write: if request.auth != null; }
     }
   }
