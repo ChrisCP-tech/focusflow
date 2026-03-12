@@ -12,6 +12,8 @@ service cloud.firestore {
         // Any logged-in user can LIST and GET public tasks (needed for collection queries)
         allow get:  if request.auth != null && resource.data.isPublic == true;
         allow list: if request.auth != null;
+        // Collab: allow other logged-in users to update subtasks/progress on public tasks
+        allow update: if request.auth != null && resource.data.isPublic == true;
       }
 
       match /habits/{habitId} {

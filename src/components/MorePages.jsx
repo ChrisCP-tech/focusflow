@@ -1217,8 +1217,8 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
     setLoading(true);
     fetchUserProfile(targetUid).then(p => { setTargetProfile(p); setLoading(false); });
 
-    // Always load public tasks live
-    let unsubTasks, unsubHabits;
+    // Live public tasks
+    let unsubTasks;
     import("firebase/firestore").then(({ collection, query, where, onSnapshot, limit }) => {
       import("../firebase/config").then(({ db }) => {
         unsubTasks = onSnapshot(
@@ -1229,17 +1229,26 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
             setTasks(list);
           }
         );
-        // Load public habits if friend
-        if (isFriend || isSelf) {
-          unsubHabits = onSnapshot(
-            query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
-            snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()})))
-          );
-        }
       });
     });
-    return () => { unsubTasks?.(); unsubHabits?.(); };
-  }, [targetUid, isFriend, isSelf]);
+    return () => { unsubTasks?.(); };
+  }, [targetUid]);
+
+  // Habits in a separate effect so it loads independently of isFriend timing
+  useEffect(() => {
+    if (!targetUid) return;
+    let unsubHabits;
+    import("firebase/firestore").then(({ collection, query, where, onSnapshot, limit }) => {
+      import("../firebase/config").then(({ db }) => {
+        unsubHabits = onSnapshot(
+          query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
+          snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()}))),
+          () => setHabits([])
+        );
+      });
+    });
+    return () => { unsubHabits?.(); };
+  }, [targetUid]);
 
   if (loading || !targetProfile) return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -1361,7 +1370,7 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
         )}
 
         {/* Public Habits — collapsible, only for friends */}
-        {isFriend && habits.length > 0 && (
+        {habits.length > 0 && (
           <div style={{ marginBottom:16 }}>
             <button onClick={() => setExpandHabits(v=>!v)} style={{
               width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)",

@@ -1,7 +1,7 @@
 // src/hooks/useSquads.js
 import { useState, useEffect, useCallback } from "react";
 import {
-  collection, doc, onSnapshot, addDoc, updateDoc,
+  collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
   query, orderBy, limit, serverTimestamp,
   arrayUnion, arrayRemove, getDoc, getDocs, where
 } from "firebase/firestore";
@@ -83,7 +83,11 @@ export function useSquads(uid) {
     });
   }, []);
 
-  return { squads, createSquad, joinSquadByCode, leaveSquad };
+  const deleteSquad = useCallback(async (squadId) => {
+    await deleteDoc(doc(db, "squads", squadId));
+  }, []);
+
+  return { squads, createSquad, joinSquadByCode, leaveSquad, deleteSquad };
 }
 
 export function useSquadFeed(squadId) {

@@ -9,7 +9,7 @@ const SQUAD_EMOJIS = ["👥","🔥","📚","🚀","💪","🎯","🧠","⚡","�
 
 /* ═══════════════════════════════ SQUADS PAGE ══════════════════════════════ */
 export function SquadsPage({ profile, uid }) {
-  const { squads, createSquad, joinSquadByCode, leaveSquad } = useSquads(uid);
+  const { squads, createSquad, joinSquadByCode, leaveSquad, deleteSquad } = useSquads(uid);
   const [activeSquadId, setActiveSquadId] = useState(null);
   const [tab, setTab] = useState("feed");
   const [showCreate, setShowCreate] = useState(false);
@@ -138,7 +138,17 @@ export function SquadsPage({ profile, uid }) {
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
                 Invite code: <span style={{ color: "#FDCB6E", fontWeight: 700, letterSpacing: "0.1em" }}>{activeSquad.inviteCode}</span>
               </div>
-              <Btn small ghost color="#6C63FF" onClick={() => navigator.clipboard?.writeText(activeSquad.inviteCode).then(() => alert("Code copied!"))}>Copy</Btn>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Btn small ghost color="#6C63FF" onClick={() => navigator.clipboard?.writeText(activeSquad.inviteCode).then(() => alert("Code copied!"))}>Copy</Btn>
+                {activeSquad.ownerId === uid && (
+                  <Btn small ghost color="#FF6B6B" onClick={() => {
+                    if (window.confirm(`Delete "${activeSquad.name}"? This cannot be undone.`)) {
+                      deleteSquad(activeSquad.id);
+                      setActiveSquadId(squads.find(s => s.id !== activeSquad.id)?.id || null);
+                    }
+                  }}>🗑 Delete</Btn>
+                )}
+              </div>
             </div>
           </Card>
 

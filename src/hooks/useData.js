@@ -347,13 +347,15 @@ export function useCollabTaskSync(uid, tasks) {
   }, [uid, tasks]);
 }
 
-// When collab task member updates subtasks, push to owner's task too
+// When collab task member updates subtasks, write to their copy AND owner's original
 export async function pushCollabSubtaskUpdate(uid, task, subtasks, progress) {
-  await updateDoc(doc(db, "users", uid, "tasks", task.id), { subtasks, progress });
+  // Write to current user's copy
+  await updateDoc(doc(db, "users", uid, "tasks", task.id), { subtasks, progress }).catch(() => {});
+  // Also write to owner's original (allowed by Firestore rules for public tasks)
   if (task.isCollab && task.collabOwnerUid && task.collabTaskId) {
     await updateDoc(doc(db, "users", task.collabOwnerUid, "tasks", task.collabTaskId), {
       subtasks, progress
-    }).catch(() => {});
+    }).catch(e => console.warn("Collab push to owner failed:", e.message));
   }
 }
 
