@@ -290,7 +290,27 @@ export function useTaskInvites(uid) {
   }, [uid]);
 
   const acceptInvite = useCallback(async (uid, inviteId) => {
+    // Mark invite accepted
     await updateDoc(doc(db, "users", uid, "taskInvites", inviteId), { status: "accepted" });
+    // Get invite data to create a collab task reference
+    const invSnap = await getDoc(doc(db, "users", uid, "taskInvites", inviteId));
+    if (!invSnap.exists()) return;
+    const inv = invSnap.data();
+    // Get the owner's original task
+    const taskSnap = await getDoc(doc(db, "users", inv.fromUid, "tasks", inv.taskId));
+    if (!taskSnap.exists()) return;
+    const taskData = taskSnap.data();
+    // Create a collab copy in acceptor's tasks pointing back to owner's task
+    await setDoc(doc(db, "users", uid, "tasks", `collab_${inv.fromUid}_${inv.taskId}`), {
+      ...taskData,
+      id: `collab_${inv.fromUid}_${inv.taskId}`,
+      isCollab: true,
+      collabOwnerUid: inv.fromUid,
+      collabTaskId: inv.taskId,
+      collabInviteId: inviteId,
+      done: false,
+      createdAt: serverTimestamp(),
+    });
   }, []);
 
   const declineInvite = useCallback(async (uid, inviteId) => {
@@ -298,6 +318,43 @@ export function useTaskInvites(uid) {
   }, []);
 
   return { invites, acceptInvite, declineInvite };
+}
+
+/* ─── Collab Task Live Sync ──────────────────────────────────────────────── */
+// Hook that mirrors subtask/progress updates between collab task owner and acceptor
+export function useCollabTaskSync(uid, tasks) {
+  useEffect(() => {
+    if (!uid || !tasks.length) return;
+    const collabTasks = tasks.filter(t => t.isCollab && t.collabOwnerUid && t.collabTaskId);
+    const unsubs = collabTasks.map(t => {
+      // Listen to the owner's original task for live updates
+      return onSnapshot(
+        doc(db, "users", t.collabOwnerUid, "tasks", t.collabTaskId),
+        snap => {
+          if (!snap.exists()) return;
+          const ownerData = snap.data();
+          // Mirror subtasks and progress to this user's collab copy
+          updateDoc(doc(db, "users", uid, "tasks", t.id), {
+            subtasks: ownerData.subtasks || [],
+            progress: ownerData.progress || 0,
+            title: ownerData.title,
+            desc: ownerData.desc,
+          }).catch(() => {});
+        }
+      );
+    });
+    return () => unsubs.forEach(u => u());
+  }, [uid, tasks]);
+}
+
+// When collab task member updates subtasks, push to owner's task too
+export async function pushCollabSubtaskUpdate(uid, task, subtasks, progress) {
+  await updateDoc(doc(db, "users", uid, "tasks", task.id), { subtasks, progress });
+  if (task.isCollab && task.collabOwnerUid && task.collabTaskId) {
+    await updateDoc(doc(db, "users", task.collabOwnerUid, "tasks", task.collabTaskId), {
+      subtasks, progress
+    }).catch(() => {});
+  }
 }
 
 /* ─── Gold & Rewards ─────────────────────────────────────────────────────── */

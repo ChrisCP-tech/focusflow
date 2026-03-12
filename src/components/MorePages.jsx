@@ -1200,22 +1200,46 @@ function ShopTab({ profile, updateProfile, lvl }) {
 }
 
 /* ═════════════════════════════ PROFILE VIEWER ═════════════════════════════ */
-export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequest, onGiftGold, profile, updateProfile }) {
+export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequest, onGiftGold, profile, updateProfile, friends }) {
   const [targetProfile, setTargetProfile] = useState(null);
   const [tasks,         setTasks]         = useState([]);
+  const [habits,        setHabits]        = useState([]);
   const [loading,       setLoading]       = useState(true);
+  const [expandTasks,   setExpandTasks]   = useState(true);
+  const [expandHabits,  setExpandHabits]  = useState(false);
+  const [expandedTask,  setExpandedTask]  = useState(null);
+
+  const isFriend = (friends||[]).some(f => f.uid === targetUid && f.status === "accepted");
+  const isSelf   = targetUid === currentUid;
 
   useEffect(() => {
     if (!targetUid) return;
     setLoading(true);
     fetchUserProfile(targetUid).then(p => { setTargetProfile(p); setLoading(false); });
-    import("firebase/firestore").then(({ collection, query, where, orderBy, limit, getDocs }) => {
+
+    // Always load public tasks live
+    let unsubTasks, unsubHabits;
+    import("firebase/firestore").then(({ collection, query, where, onSnapshot, limit }) => {
       import("../firebase/config").then(({ db }) => {
-        getDocs(query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), orderBy("createdAt","desc"), limit(10)))
-          .then(snap => setTasks(snap.docs.map(d => ({id:d.id,...d.data()}))));
+        unsubTasks = onSnapshot(
+          query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), limit(15)),
+          snap => {
+            const list = snap.docs.map(d=>({id:d.id,...d.data()}));
+            list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+            setTasks(list);
+          }
+        );
+        // Load public habits if friend
+        if (isFriend || isSelf) {
+          unsubHabits = onSnapshot(
+            query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
+            snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()})))
+          );
+        }
       });
     });
-  }, [targetUid]);
+    return () => { unsubTasks?.(); unsubHabits?.(); };
+  }, [targetUid, isFriend, isSelf]);
 
   if (loading || !targetProfile) return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -1223,13 +1247,18 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
     </div>
   );
 
-  const lvl     = getLevel(targetProfile.xp || 0);
-  const isSelf  = targetUid === currentUid;
-  const sColor  = streakColor(lvl);
+  const lvl    = getLevel(targetProfile.xp || 0);
+  const sColor = streakColor(lvl);
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  const activeTasks = tasks.filter(t => !t.done);
+  const doneTasks   = tasks.filter(t => t.done);
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:480, background:"#0F1120", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"85vh", overflowY:"auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:480, background:"#0F1120", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"90vh", overflowY:"auto" }}>
+
+        {/* Header */}
         <div style={{ textAlign:"center", marginBottom:20 }}>
           <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", border:"3px solid rgba(108,99,255,0.4)" }}>{targetProfile.avatar}</div>
           <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>{targetProfile.name}</div>
@@ -1239,28 +1268,134 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
             <span style={{ color:sColor, fontWeight:700 }}>🔥 {targetProfile.streak||0}</span>
             <span style={{ color:"#FDCB6E", fontWeight:700 }}>🪙 {targetProfile.gold||0}</span>
           </div>
-          {!isSelf && (
+          {isFriend && <div style={{ fontSize:11, color:"#55EFC4", marginTop:6, fontWeight:600 }}>👥 Friends</div>}
+          {!isSelf && !isFriend && (
             <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:12 }}>
               <Btn small color="#6C63FF" onClick={() => onSendFriendRequest(currentUid, profile, targetUid)}>+ Add Friend</Btn>
               <Btn small ghost color="#FDCB6E" onClick={() => onGiftGold(targetUid)}>🪙 Gift Gold</Btn>
             </div>
           )}
+          {isFriend && !isSelf && (
+            <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:12 }}>
+              <Btn small ghost color="#FDCB6E" onClick={() => onGiftGold(targetUid)}>🪙 Gift Gold</Btn>
+            </div>
+          )}
         </div>
 
+        {/* Public Tasks — collapsible, live */}
         {tasks.length > 0 && (
-          <>
-            <div style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.4)", marginBottom:10, letterSpacing:"0.05em" }}>PUBLIC TASKS</div>
-            {tasks.map(t => (
-              <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
-                <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
-                <span style={{ fontSize:13, flex:1, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
-                <span style={{ fontSize:11, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
+          <div style={{ marginBottom:16 }}>
+            <button onClick={() => setExpandTasks(v=>!v)} style={{
+              width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)",
+              borderRadius:10, padding:"10px 14px", cursor:"pointer", color:"#E8E9F3",
+              display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"inherit"
+            }}>
+              <span style={{ fontSize:13, fontWeight:700 }}>✅ Tasks <span style={{ fontSize:11, color:"rgba(255,255,255,0.35)", fontWeight:400 }}>({activeTasks.length} active)</span></span>
+              <span style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{expandTasks?"▲":"▼"}</span>
+            </button>
+            {expandTasks && (
+              <div style={{ marginTop:8 }}>
+                {activeTasks.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.25)", padding:"8px 4px" }}>No active public tasks</div>}
+                {activeTasks.map(t => {
+                  const subs    = t.subtasks || [];
+                  const subDone = subs.filter(s=>s.done).length;
+                  const subPct  = subs.length ? Math.round(subDone/subs.length*100) : 0;
+                  const pc      = { high:"#FF6B6B", medium:"#FDCB6E", low:"#55EFC4" }[t.priority] || "#6C63FF";
+                  const isOpen  = expandedTask === t.id;
+                  return (
+                    <div key={t.id} style={{ marginBottom:8, background:"rgba(255,255,255,0.03)", borderRadius:10, borderLeft:`3px solid ${pc}`, overflow:"hidden" }}>
+                      <button onClick={() => setExpandedTask(isOpen ? null : t.id)} style={{
+                        width:"100%", background:"none", border:"none", padding:"10px 12px",
+                        cursor:"pointer", color:"#E8E9F3", fontFamily:"inherit", textAlign:"left",
+                        display:"flex", justifyContent:"space-between", alignItems:"center", gap:8
+                      }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontWeight:600, fontSize:13 }}>{t.title}</div>
+                          {subs.length > 0 && (
+                            <div style={{ marginTop:5 }}>
+                              <div style={{ height:3, background:"rgba(255,255,255,0.06)", borderRadius:2 }}>
+                                <div style={{ height:"100%", width:`${subPct}%`, background:"linear-gradient(90deg,#6C63FF,#55EFC4)", borderRadius:2 }} />
+                              </div>
+                              <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", marginTop:2 }}>{subDone}/{subs.length} subtasks · {subPct}%</div>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2, flexShrink:0 }}>
+                          <span style={{ fontSize:10, color:"#FDCB6E", fontWeight:700 }}>+{t.xp||20}XP</span>
+                          {t.dueTime && <span style={{ fontSize:10, color:"#74B9FF" }}>⏰{t.dueTime}</span>}
+                          <span style={{ fontSize:10, color:"rgba(255,255,255,0.25)" }}>{isOpen?"▲":"▼"}</span>
+                        </div>
+                      </button>
+                      {isOpen && subs.length > 0 && (
+                        <div style={{ padding:"0 12px 10px" }}>
+                          {subs.map(s => (
+                            <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderTop:"1px solid rgba(255,255,255,0.04)" }}>
+                              <div style={{ width:14, height:14, borderRadius:3, border:`2px solid ${s.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:s.done?"#55EFC4":"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                                {s.done && <span style={{ fontSize:9, color:"#0B0D17", fontWeight:900 }}>✓</span>}
+                              </div>
+                              <span style={{ fontSize:12, textDecoration:s.done?"line-through":"none", color:s.done?"rgba(255,255,255,0.3)":"#E8E9F3" }}>{s.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {doneTasks.length > 0 && (
+                  <div style={{ marginTop:4 }}>
+                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.25)", fontWeight:600, letterSpacing:"0.05em", marginBottom:6 }}>RECENTLY DONE</div>
+                    {doneTasks.slice(0,3).map(t => (
+                      <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                        <div style={{ width:14, height:14, borderRadius:3, background:"#55EFC4", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          <span style={{ color:"#0B0D17", fontSize:9, fontWeight:900 }}>✓</span>
+                        </div>
+                        <span style={{ fontSize:12, textDecoration:"line-through", color:"rgba(255,255,255,0.3)", flex:1 }}>{t.title}</span>
+                        <span style={{ fontSize:10, color:"#55EFC4" }}>+{t.xp||20}XP</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-          </>
+            )}
+          </div>
         )}
 
-        <button onClick={onClose} style={{ width:"100%", marginTop:20, background:"rgba(255,255,255,0.06)", border:"none", color:"rgba(255,255,255,0.4)", borderRadius:10, padding:"10px 0", fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>Close</button>
+        {/* Public Habits — collapsible, only for friends */}
+        {isFriend && habits.length > 0 && (
+          <div style={{ marginBottom:16 }}>
+            <button onClick={() => setExpandHabits(v=>!v)} style={{
+              width:"100%", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)",
+              borderRadius:10, padding:"10px 14px", cursor:"pointer", color:"#E8E9F3",
+              display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:"inherit"
+            }}>
+              <span style={{ fontSize:13, fontWeight:700 }}>⚡ Habits <span style={{ fontSize:11, color:"rgba(255,255,255,0.35)", fontWeight:400 }}>({habits.length} public)</span></span>
+              <span style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{expandHabits?"▲":"▼"}</span>
+            </button>
+            {expandHabits && (
+              <div style={{ marginTop:8 }}>
+                {habits.map(h => {
+                  const log      = h.log || [];
+                  const doneToday = log.includes(todayStr);
+                  const streak   = (() => { let s=0,d=new Date(); while(log.includes(d.toISOString().slice(0,10))){ s++; d.setDate(d.getDate()-1); } return s; })();
+                  return (
+                    <div key={h.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"rgba(255,255,255,0.03)", borderRadius:10, marginBottom:6, borderLeft:`3px solid ${doneToday?"#55EFC4":"rgba(255,255,255,0.1)"}` }}>
+                      <span style={{ fontSize:22 }}>{h.icon||"⚡"}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:600 }}>{h.name}</div>
+                        <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>🔥 {streak} day streak</div>
+                      </div>
+                      <div style={{ fontSize:11, fontWeight:700, color:doneToday?"#55EFC4":"rgba(255,255,255,0.25)" }}>
+                        {doneToday?"✓ Done":"—"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button onClick={onClose} style={{ width:"100%", marginTop:8, background:"rgba(255,255,255,0.06)", border:"none", color:"rgba(255,255,255,0.4)", borderRadius:10, padding:"10px 0", fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>Close</button>
       </div>
     </div>
   );

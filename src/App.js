@@ -1,7 +1,7 @@
 // src/App.js
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth }         from "./hooks/useAuth";
-import { useTasks, useHabits, useFeed, useSquadMembers, useMoodLog, useFriends, useTaskInvites, useGold } from "./hooks/useData";
+import { useTasks, useHabits, useFeed, useSquadMembers, useMoodLog, useFriends, useTaskInvites, useGold, useCollabTaskSync, pushCollabSubtaskUpdate } from "./hooks/useData";
 import LoginScreen           from "./components/LoginScreen";
 import Onboard               from "./components/Onboard";
 import { TopBar, BottomNav } from "./components/Nav";
@@ -49,6 +49,9 @@ export default function App() {
   const { friends, sendFriendRequest, acceptFriend, removeFriend, inviteFriendToTask }            = useFriends(uid);
   const { invites: taskInvites, acceptInvite, declineInvite }                                     = useTaskInvites(uid);
   const { rewards, addReward, redeemReward, deleteReward, giftGold }                              = useGold(uid);
+
+  // Live sync collab tasks (tasks accepted from friend invites)
+  useCollabTaskSync(uid, tasks);
 
   const [page,        setPage]        = useState("home");
   const [xpToast,     setXpToast]     = useState(null);
@@ -244,6 +247,7 @@ export default function App() {
           onClose={() => setViewProfile(null)}
           onSendFriendRequest={sendFriendRequest}
           onGiftGold={handleGiftGold}
+          friends={friends}
         />
       )}
 
@@ -266,6 +270,10 @@ export default function App() {
               inviteFriendToTask(uid, friendUid, task);
               showToast("Invite sent! 📨");
             }}
+            taskInvites={taskInvites}
+            onAcceptInvite={(id) => acceptInvite(uid, id)}
+            onDeclineInvite={(id) => declineInvite(uid, id)}
+            onCollabSubtaskUpdate={(task, subtasks, progress) => pushCollabSubtaskUpdate(uid, task, subtasks, progress)}
           />
         )}
         {page === "habits" && (

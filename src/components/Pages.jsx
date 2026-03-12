@@ -295,15 +295,17 @@ function MiniHabit({ habit, onCheck }) {
 }
 
 /* ═══════════════════════════════ TASKS PAGE ═══════════════════════════════ */
-export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask, friends, uid, onInviteFriend }) {
-  const [showForm,  setShowForm]  = useState(false);
-  const [filter,    setFilter]    = useState("all");
+export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask, friends, uid, onInviteFriend, taskInvites, onAcceptInvite, onDeclineInvite, onCollabSubtaskUpdate }) {
+  const [showForm,    setShowForm]    = useState(false);
+  const [filter,      setFilter]      = useState("all");
+  const [showInvites, setShowInvites] = useState(false);
   const [form,      setForm]      = useState({ title:"", desc:"", priority:"medium", tag:"", xp:20, gold:10, dueTime:"", isPublic:true });
   const [aiXP,      setAiXP]      = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiBreakId, setAiBreakId] = useState(null);
   const [aiCooldowns, setAiCooldowns] = useState({});
   const debounceRef = useRef(null);
+  const pendingInvites = (taskInvites||[]).filter(i => i.status === "pending");
 
   // AI XP suggestion as user types (debounced 900ms)
   useEffect(() => {
@@ -358,8 +360,43 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
     <div className="fadeUp">
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
         <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>Tasks ✅</h2>
-        <Btn small color="#6C63FF" onClick={() => setShowForm(v => !v)}>{showForm ? "✕ Close" : "+ Add"}</Btn>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          {pendingInvites.length > 0 && (
+            <button onClick={() => setShowInvites(v=>!v)} style={{
+              background: showInvites ? "rgba(253,203,110,0.2)" : "rgba(253,203,110,0.1)",
+              border:"1.5px solid rgba(253,203,110,0.4)", borderRadius:10,
+              color:"#FDCB6E", fontSize:12, fontWeight:700, cursor:"pointer",
+              padding:"5px 10px", fontFamily:"inherit", display:"flex", alignItems:"center", gap:5
+            }}>
+              📨 {pendingInvites.length} Invite{pendingInvites.length>1?"s":""}
+              <span style={{ fontSize:10 }}>{showInvites?"▲":"▼"}</span>
+            </button>
+          )}
+          <Btn small color="#6C63FF" onClick={() => setShowForm(v => !v)}>{showForm ? "✕ Close" : "+ Add"}</Btn>
+        </div>
       </div>
+
+      {/* Task Invites Banner */}
+      {showInvites && pendingInvites.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          {pendingInvites.map(inv => (
+            <Card key={inv.id} style={{ marginBottom:8, borderLeft:"3px solid #FDCB6E", background:"rgba(253,203,110,0.05)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:700, fontSize:14, marginBottom:2 }}>📨 {inv.taskTitle}</div>
+                  <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>
+                    Friend invited you · +{inv.taskXp||20}XP · +{inv.taskGold||10}🪙
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                  <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => { onAcceptInvite(inv.id); setShowInvites(false); }}>✓ Accept</Btn>
+                  <Btn small ghost color="#FF6B6B" onClick={() => onDeclineInvite(inv.id)}>✕</Btn>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {showForm && (
         <Card style={{ marginBottom:16 }}>
@@ -436,13 +473,14 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
           friends={friends}
           uid={uid}
           onInviteFriend={onInviteFriend}
+          onCollabSubtaskUpdate={onCollabSubtaskUpdate}
         />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onDeleteSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend }) {
+function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onDeleteSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend, onCollabSubtaskUpdate }) {
   const [expanded,   setExpanded]   = useState(false);
   const [newSub,     setNewSub]     = useState("");
   const [showInvite, setShowInvite] = useState(false);
@@ -450,6 +488,17 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
   const subtasks = task.subtasks || [];
   const progress = task.progress || 0;
   const accepted = (friends||[]).filter(f => f.status === "accepted");
+
+  function handleSubtaskToggle(stId) {
+    onToggleSubtask(stId);
+    // If collab task, also push to owner
+    if (task.isCollab && onCollabSubtaskUpdate) {
+      const updated = subtasks.map(s => s.id === stId ? { ...s, done: !s.done } : s);
+      const done = updated.filter(s=>s.done).length;
+      const pct = updated.length ? Math.round(done/updated.length*100) : 0;
+      onCollabSubtaskUpdate(task, updated, pct);
+    }
+  }
 
   function submitSub() {
     if (!newSub.trim()) return;
@@ -482,7 +531,10 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:6 }}>
             <div style={{ cursor:"pointer", flex:1 }} onClick={() => !task.done && setExpanded(v=>!v)}>
-              <div style={{ fontWeight:600, fontSize:14, textDecoration:task.done?"line-through":"none", color:task.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{task.title}</div>
+              <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                <div style={{ fontWeight:600, fontSize:14, textDecoration:task.done?"line-through":"none", color:task.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{task.title}</div>
+                {task.isCollab && <span style={{ fontSize:10, background:"rgba(108,99,255,0.2)", border:"1px solid rgba(108,99,255,0.4)", borderRadius:6, padding:"1px 6px", color:"#A29BFE", fontWeight:700 }}>👥 Shared</span>}
+              </div>
               {task.desc && !task.done && <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginTop:2 }}>{task.desc}</div>}
               {task.dueTime && !task.done && <div style={{ fontSize:11, color:"#74B9FF", marginTop:2 }}>⏰ {task.dueTime}</div>}
             </div>
@@ -544,7 +596,7 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
           </div>
           {subtasks.map(s => (
             <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
-              <button onClick={() => onToggleSubtask(s.id)} style={{
+              <button onClick={() => handleSubtaskToggle(s.id)} style={{
                 width:18, height:18, borderRadius:4,
                 border:`2px solid ${s.done?"#55EFC4":"rgba(255,255,255,0.25)"}`,
                 background:s.done?"#55EFC4":"transparent", cursor:"pointer", flexShrink:0,
