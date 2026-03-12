@@ -1,247 +1,82 @@
 // src/components/MorePages.jsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
-import { TYPE_ICONS, TYPE_COLORS, getLevel, xpProgress, LEVEL_NAMES, MOODS } from "../utils";
-import { useFriends, useFriendContent, useGroupPomodoro } from "../hooks/useData";
+import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
+import { fetchUserProfile } from "../hooks/useData";
 
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 export function FocusPage({ onComplete, profile }) {
-  const PRESETS = [5, 10, 15, 25, 50];
-  const [mins,     setMins]     = useState(25);
-  const [sec,      setSec]      = useState(0);
+  const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
+  const [selected, setSelected] = useState(1500);
+  const [left,     setLeft]     = useState(1500);
   const [running,  setRunning]  = useState(false);
   const [done,     setDone]     = useState(false);
-  const [sessions, setSessions] = useState([]);
-  const [tab,      setTab]      = useState("solo"); // solo | group
-  const [sessionId, setSessionId] = useState(null);
-  const [joinInput, setJoinInput] = useState("");
-  const totalRef = useRef(25 * 60);
-  const leftRef  = useRef(25 * 60);
-  const ivRef    = useRef(null);
 
-  const { session, messages, participants, createSession, joinSession, startSession, endSession, sendMessage, leaveSession } = useGroupPomodoro(sessionId);
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setLeft(l => {
+      if (l <= 1) { setRunning(false); setDone(true); clearInterval(t); return 0; }
+      return l - 1;
+    }), 1000);
+    return () => clearInterval(t);
+  }, [running]);
 
-  function start(m) {
-    const s = (m || mins) * 60;
-    totalRef.current = s; leftRef.current = s;
-    setMins(Math.floor(s / 60)); setSec(s % 60);
-    setRunning(true); setDone(false);
-    clearInterval(ivRef.current);
-    ivRef.current = setInterval(() => {
-      leftRef.current--;
-      setMins(Math.floor(leftRef.current / 60));
-      setSec(leftRef.current % 60);
-      if (leftRef.current <= 0) {
-        clearInterval(ivRef.current);
-        setRunning(false); setDone(true);
-        setSessions(s => [{ id: Date.now(), ts: Date.now() }, ...s]);
-        onComplete && onComplete();
-        if (sessionId) endSession(sessionId);
-      }
-    }, 1000);
-  }
-  function pause()  { clearInterval(ivRef.current); setRunning(false); }
-  function reset()  { clearInterval(ivRef.current); setRunning(false); setDone(false); leftRef.current = totalRef.current; setMins(Math.floor(totalRef.current / 60)); setSec(totalRef.current % 60); }
+  function pick(s) { if (!running) { setSelected(s); setLeft(s); setDone(false); } }
+  function reset()  { setRunning(false); setLeft(selected); setDone(false); }
 
-  async function handleCreateSession() {
-    if (!profile) return;
-    const id = await createSession(profile, mins);
-    setSessionId(id);
-  }
-
-  async function handleJoinSession() {
-    if (!joinInput.trim() || !profile) return;
-    await joinSession(joinInput.trim(), profile);
-    setSessionId(joinInput.trim());
-    setJoinInput("");
-  }
-
-  async function handleStartGroupSession() {
-    if (!sessionId) return;
-    await startSession(sessionId, mins);
-    start();
-  }
-
-  const pct  = totalRef.current ? ((totalRef.current - leftRef.current) / totalRef.current) * 100 : 0;
-  const R    = 52;
-  const circ = 2 * Math.PI * R;
+  const mins = String(Math.floor(left/60)).padStart(2,"0");
+  const secs = String(left%60).padStart(2,"0");
+  const pct  = ((selected - left) / selected) * 100;
 
   return (
-    <div className="fadeUp">
-      <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>Focus Timer ⏱</h2>
-      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.4)", marginBottom: 16 }}>Complete a session to earn 40 XP 🧠</p>
-
-      {/* Tab toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {["solo", "group"].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            flex: 1, padding: "8px 0", borderRadius: 10, fontSize: 13, fontWeight: 600,
-            background: tab === t ? "#6C63FF" : "rgba(255,255,255,0.06)",
-            border: "none", color: tab === t ? "#fff" : "rgba(255,255,255,0.4)", cursor: "pointer"
-          }}>{t === "solo" ? "🎯 Solo" : "👥 Group Session"}</button>
+    <div className="fadeUp" style={{ display:"flex", flexDirection:"column", alignItems:"center", paddingTop:20 }}>
+      <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:24 }}>Focus Mode ⏱</h2>
+      <div style={{ display:"flex", gap:8, marginBottom:32 }}>
+        {PRESETS.map(p => (
+          <button key={p.s} onClick={() => pick(p.s)} style={{
+            padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:600, cursor:"pointer", border:"none",
+            background:selected===p.s?"#6C63FF":"rgba(255,255,255,0.07)",
+            color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
+          }}>{p.label}</button>
         ))}
       </div>
 
-      <Card style={{ marginBottom: 16, textAlign: "center" }}>
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 24, flexWrap: "wrap" }}>
-          {PRESETS.map(p => (
-            <Btn key={p} small ghost={!(totalRef.current === p * 60)} color="#6C63FF" onClick={() => { if (!running) { totalRef.current = p * 60; leftRef.current = p * 60; setMins(p); setSec(0); } }}>{p}m</Btn>
-          ))}
+      <div style={{ position:"relative", width:200, height:200, marginBottom:32 }}>
+        <svg width="200" height="200" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
+          <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle cx="100" cy="100" r="90" fill="none" stroke="#6C63FF" strokeWidth="8"
+            strokeDasharray={`${2*Math.PI*90}`} strokeDashoffset={`${2*Math.PI*90*(1-pct/100)}`}
+            strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
+        </svg>
+        <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:42 }}>{mins}:{secs}</div>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{running ? "focusing…" : done ? "done! 🎉" : "ready"}</div>
         </div>
+      </div>
 
-        <div style={{ position: "relative", width: 132, height: 132, margin: "0 auto 24px" }}>
-          <svg width={132} height={132} style={{ transform: "rotate(-90deg)" }}>
-            <circle cx={66} cy={66} r={R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={9} />
-            <circle cx={66} cy={66} r={R} fill="none"
-              stroke={done ? "#55EFC4" : running ? "#6C63FF" : "rgba(255,255,255,0.18)"} strokeWidth={9}
-              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)}
-              strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
-          </svg>
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 26, color: "#E8E9F3" }}>
-              {String(mins).padStart(2, "0")}:{String(sec).padStart(2, "0")}
-            </div>
-            {done && <div style={{ fontSize: 11, color: "#55EFC4", fontWeight: 700 }}>Done! 🎉</div>}
-            {tab === "group" && participants.length > 0 && (
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>{participants.length} focusing</div>
-            )}
-          </div>
+      {done ? (
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:16, fontWeight:700, color:"#55EFC4", marginBottom:12 }}>Session complete! +40XP +20🪙</div>
+          <Btn color="#6C63FF" onClick={() => { onComplete(); reset(); }}>Claim Reward 🎉</Btn>
         </div>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-          {tab === "solo" ? (
-            <>
-              {!running && !done && <Btn color="#6C63FF" onClick={() => start()}>▶ Start</Btn>}
-              {running && <Btn ghost color="#6C63FF" onClick={pause}>⏸ Pause</Btn>}
-              <Btn ghost color="rgba(255,255,255,0.2)" style={{ color: "rgba(255,255,255,0.5)" }} onClick={reset}>↺ Reset</Btn>
-            </>
-          ) : (
-            <>
-              {sessionId && session?.hostUid === profile?.uid && !running && !done && (
-                <Btn color="#6C63FF" onClick={handleStartGroupSession}>▶ Start All</Btn>
-              )}
-              {running && session?.hostUid === profile?.uid && <Btn ghost color="#6C63FF" onClick={pause}>⏸ Pause</Btn>}
-              <Btn ghost color="rgba(255,255,255,0.2)" style={{ color: "rgba(255,255,255,0.5)" }} onClick={reset}>↺ Reset</Btn>
-            </>
-          )}
+      ) : (
+        <div style={{ display:"flex", gap:10 }}>
+          <Btn color="#6C63FF" onClick={() => setRunning(v=>!v)}>{running?"⏸ Pause":"▶ Start"}</Btn>
+          {(running || left !== selected) && <Btn ghost color="#6C63FF" onClick={reset}>↺ Reset</Btn>}
         </div>
-      </Card>
-
-      {/* Group session panel */}
-      {tab === "group" && (
-        <>
-          {!sessionId ? (
-            <Card style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Start or join a group session</div>
-              <Btn color="#6C63FF" style={{ width: "100%", marginBottom: 10 }} onClick={handleCreateSession}>
-                + Create Session
-              </Btn>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Input value={joinInput} onChange={setJoinInput} placeholder="Paste session ID to join…" style={{ flex: 1 }} />
-                <Btn color="#55EFC4" style={{ color: "#0B0D17" }} onClick={handleJoinSession}>Join</Btn>
-              </div>
-            </Card>
-          ) : (
-            <>
-              {/* Session info */}
-              <Card style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Session ID</div>
-                  <Btn small color="#6C63FF" onClick={() => navigator.clipboard?.writeText(sessionId).then(() => alert("Copied! 📋"))}>Copy ID</Btn>
-                </div>
-                <div style={{ fontSize: 11, color: "#A29BFE", background: "rgba(108,99,255,0.1)", borderRadius: 6, padding: "6px 10px", wordBreak: "break-all", marginBottom: 12 }}>{sessionId}</div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 8, letterSpacing: "0.08em" }}>PARTICIPANTS ({participants.length})</div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {participants.map(p => (
-                    <div key={p.uid} style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", borderRadius: 20, padding: "4px 10px" }}>
-                      <span style={{ fontSize: 16 }}>{p.avatar}</span>
-                      <span style={{ fontSize: 12 }}>{p.name}</span>
-                      {p.uid === session?.hostUid && <span style={{ fontSize: 10, color: "#FDCB6E" }}>host</span>}
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => { leaveSession(sessionId, profile?.uid); setSessionId(null); }} style={{ marginTop: 12, background: "none", border: "none", color: "#FF6B6B", fontSize: 12, cursor: "pointer", padding: 0 }}>Leave session</button>
-              </Card>
-
-              {/* Group chat */}
-              <GroupChat sessionId={sessionId} profile={profile} messages={messages} sendMessage={sendMessage} />
-            </>
-          )}
-        </>
       )}
-
-      {done && (
-        <Card style={{ background: "linear-gradient(135deg,rgba(85,239,196,0.12),transparent)", border: "1px solid rgba(85,239,196,0.25)", textAlign: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 32, marginBottom: 6 }}>🎉</div>
-          <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 18, color: "#55EFC4" }}>Session Complete!</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>+40 XP earned — great work!</div>
-        </Card>
-      )}
-
-      <Card>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>SESSION HISTORY</div>
-        {sessions.length === 0
-          ? <div style={{ fontSize: 13, color: "rgba(255,255,255,0.2)", textAlign: "center", padding: "16px 0" }}>No sessions yet — start your first!</div>
-          : sessions.slice(0, 8).map((s, i) => (
-            <div key={s.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)" }}>Session {sessions.length - i}</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <Tag label="+40 XP" color="#FDCB6E" />
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>{new Date(s.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-              </div>
-            </div>
-          ))
-        }
-      </Card>
     </div>
   );
 }
 
-/* ─── Group Chat ─────────────────────────────────────────────────────────── */
-function GroupChat({ sessionId, profile, messages, sendMessage }) {
-  const [text, setText] = useState("");
-  const bottomRef = useRef(null);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
-
-  function send() {
-    if (!text.trim() || !profile) return;
-    sendMessage(sessionId, profile, text.trim());
-    setText("");
-  }
-
-  return (
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 10, letterSpacing: "0.08em" }}>SESSION CHAT 💬</div>
-      <div style={{ height: 180, overflowY: "auto", marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-        {messages.length === 0 && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 60 }}>Say hi to your study squad! 👋</div>}
-        {messages.map(m => (
-          <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{m.avatar}</span>
-            <div style={{ background: m.uid === profile?.uid ? "rgba(108,99,255,0.2)" : "rgba(255,255,255,0.05)", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>{m.name}</div>
-              <div style={{ fontSize: 13 }}>{m.text}</div>
-            </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <Input value={text} onChange={setText} placeholder="Send a message…" style={{ flex: 1 }} onKeyDown={e => e.key === "Enter" && send()} />
-        <Btn small color="#6C63FF" onClick={send}>Send</Btn>
-      </div>
-    </Card>
-  );
-}
-
 /* ═══════════════════════════════ SOCIAL PAGE ══════════════════════════════ */
-export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onComment, uid, addTask, addHabit }) {
-  const [text, setText] = useState("");
-  const [activeTab, setActiveTab] = useState("feed"); // feed | friends | explore
-  const [selectedFriend, setSelectedFriend] = useState(null);
-  const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
-
-  const { friends, requests, outgoing, sendFriendRequest, acceptFriendRequest, declineFriendRequest, removeFriend } = useFriends(uid);
+export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onComment, uid, addTask, addHabit, friends, sendFriendRequest, acceptFriend, removeFriend, onViewProfile, giftGold, updateProfile, taskInvites }) {
+  const [tab,      setTab]      = useState("feed");
+  const [text,     setText]     = useState("");
+  const [targetUid,setTargetUid]= useState("");
+  const [reqStatus,setReqStatus]= useState(null);
+  const pending  = (friends||[]).filter(f => f.status==="pending" && f.direction==="incoming");
+  const accepted = (friends||[]).filter(f => f.status==="accepted");
 
   function post() {
     if (!text.trim()) return;
@@ -249,318 +84,254 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     setText("");
   }
 
+  async function handleSendRequest() {
+    setReqStatus("loading");
+    const res = await sendFriendRequest(uid, profile, targetUid.trim());
+    setReqStatus(res?.error ? `error:${res.error}` : "sent");
+    if (!res?.error) setTargetUid("");
+  }
+
   return (
     <div className="fadeUp">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22 }}>Squad 👥</h2>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{members.length} member{members.length !== 1 ? "s" : ""} · {friends.length} friend{friends.length !== 1 ? "s" : ""}</div>
-        </div>
-        {requests.length > 0 && <div style={{ background: "#FF6B6B", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>{requests.length}</div>}
-      </div>
+      <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:16 }}>Friends 👥</h2>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {[["feed", "📣 Feed"], ["friends", `👫 Friends${requests.length ? ` (${requests.length})` : ""}`], ["explore", "🔍 Find"]].map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)} style={{
-            flex: 1, padding: "8px 4px", borderRadius: 10, fontSize: 12, fontWeight: 600,
-            background: activeTab === key ? "#6C63FF" : "rgba(255,255,255,0.06)",
-            border: "none", color: activeTab === key ? "#fff" : "rgba(255,255,255,0.4)", cursor: "pointer"
-          }}>{label}</button>
+      <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto" }}>
+        {[["feed","📣 Feed"],["friends","👥 Friends"+(pending.length?` (${pending.length})`:"")],["invites","📨 Invites"]].map(([k,l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding:"7px 14px", borderRadius:10, fontSize:12, fontWeight:600, whiteSpace:"nowrap",
+            background:tab===k?"#6C63FF":"rgba(255,255,255,0.06)",
+            border:"none", color:tab===k?"#fff":"rgba(255,255,255,0.4)", cursor:"pointer"
+          }}>{l}</button>
         ))}
       </div>
 
-      {/* FEED TAB */}
-      {activeTab === "feed" && (
+      {tab === "feed" && (
         <>
-          <Card style={{ marginBottom: 16, background: "linear-gradient(135deg,rgba(108,99,255,0.12),rgba(162,155,254,0.05))" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🔗 Invite your friends</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginBottom: 10 }}>Share this link to join your squad</div>
-            <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#A29BFE", wordBreak: "break-all", marginBottom: 10 }}>{shareUrl}</div>
-            <Btn small color="#6C63FF" onClick={() => { navigator.clipboard?.writeText(shareUrl).then(() => alert("Link copied! 🎉")).catch(() => alert(shareUrl)); }}>Copy Link 📋</Btn>
-          </Card>
-
-          {members.length > 0 && (
-            <Card style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 12, letterSpacing: "0.08em" }}>LEADERBOARD 🏆</div>
-              {[...members].sort((a, b) => (b.xp || 0) - (a.xp || 0)).map((m, i) => (
-                <div key={m.uid || m.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <div style={{ width: 20, fontSize: 14, textAlign: "center" }}>
-                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{i + 1}</span>}
-                  </div>
-                  <div style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, border: `2px solid ${m.uid === profile?.uid ? "#FDCB6E" : "rgba(255,255,255,0.08)"}` }}>{m.avatar}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: m.uid === profile?.uid ? 700 : 500 }}>{m.name}{m.uid === profile?.uid ? " (you)" : ""}</div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>🔥 {m.streak || 0} streak</div>
-                  </div>
-                  <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 15, color: "#FDCB6E" }}>{m.xp || 0}</div>
-                </div>
-              ))}
-            </Card>
-          )}
-
-          <Card style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Input value={text} onChange={setText} placeholder="Share a win, thought, or cheer… 🎉" style={{ flex: 1 }} />
+          <Card style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", gap:8 }}>
+              <Input value={text} onChange={setText} placeholder="Share something… 🎉" style={{ flex:1 }} />
               <Btn color="#6C63FF" onClick={post}>Post</Btn>
             </div>
           </Card>
-
-          {feed.length === 0 && (
-            <div style={{ textAlign: "center", padding: "36px 0", color: "rgba(255,255,255,0.2)" }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🌱</div>
-              <div style={{ fontSize: 14 }}>No activity yet — be the first to share!</div>
-            </div>
-          )}
-
           {feed.map(p => (
-            <FeedPost key={p.id} post={p} profile={profile} roomId={roomId} onLike={onLike} onComment={onComment} />
+            <FeedCard key={p.id} post={p} uid={uid} profile={profile}
+              onLike={() => onLike(p.id, !p.likes?.includes(uid))}
+              onComment={(c) => onComment(roomId, p.id, c)}
+              onViewProfile={() => onViewProfile(p.userId)}
+              addTask={addTask} addHabit={addHabit}
+            />
           ))}
         </>
       )}
 
-      {/* FRIENDS TAB */}
-      {activeTab === "friends" && (
+      {tab === "friends" && (
         <>
-          {requests.length > 0 && (
-            <Card style={{ marginBottom: 16, border: "1px solid rgba(253,203,110,0.2)" }}>
-              <div style={{ fontSize: 11, color: "#FDCB6E", fontWeight: 700, marginBottom: 12, letterSpacing: "0.08em" }}>FRIEND REQUESTS 🔔</div>
-              {requests.map(r => (
-                <div key={r.uid} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{r.avatar}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>wants to be friends</div>
+          <Card style={{ marginBottom:14 }}>
+            <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"rgba(255,255,255,0.5)" }}>ADD BY USER ID</div>
+            <div style={{ display:"flex", gap:8 }}>
+              <Input value={targetUid} onChange={setTargetUid} placeholder="Paste friend's User ID…" style={{ flex:1, fontSize:12 }} />
+              <Btn small color="#6C63FF" onClick={handleSendRequest} disabled={reqStatus==="loading"}>Add</Btn>
+            </div>
+            {reqStatus?.startsWith("error:") && <div style={{ fontSize:11, color:"#FF6B6B", marginTop:6 }}>{reqStatus.replace("error:","")}</div>}
+            {reqStatus==="sent" && <div style={{ fontSize:11, color:"#55EFC4", marginTop:6 }}>Request sent! ✓</div>}
+          </Card>
+
+          {pending.length > 0 && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"#FDCB6E" }}>PENDING REQUESTS</div>
+              {pending.map(f => (
+                <Card key={f.uid} style={{ marginBottom:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ fontSize:26 }}>{f.avatar}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
+                      <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>wants to be friends</div>
+                    </div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => acceptFriend(uid, f.uid)}>Accept</Btn>
+                      <Btn small ghost color="#FF6B6B" onClick={() => removeFriend(uid, f.uid)}>Decline</Btn>
+                    </div>
                   </div>
-                  <Btn small color="#55EFC4" style={{ color: "#0B0D17" }} onClick={() => acceptFriendRequest(uid, r.uid)}>✓</Btn>
-                  <Btn small ghost color="#FF6B6B" onClick={() => declineFriendRequest(uid, r.uid)}>✕</Btn>
-                </div>
+                </Card>
               ))}
-            </Card>
+            </div>
           )}
 
-          {friends.length === 0 && requests.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "36px 0", color: "rgba(255,255,255,0.2)" }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>🤝</div>
-              <div style={{ fontSize: 14 }}>No friends yet — find people in the Find tab!</div>
+          {accepted.length === 0 && pending.length === 0 && (
+            <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>
+              <div style={{ fontSize:40, marginBottom:8 }}>👥</div>
+              <div>No friends yet — add by User ID</div>
             </div>
-          ) : (
-            friends.map(f => (
-              <Card key={f.uid} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{f.avatar}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{f.name}</div>
-                    <div style={{ fontSize: 11, color: "#55EFC4" }}>Friend ✓</div>
-                  </div>
-                  <Btn small color="#6C63FF" onClick={() => setSelectedFriend(f.uid === selectedFriend ? null : f.uid)}>
-                    {f.uid === selectedFriend ? "Hide" : "View"}
-                  </Btn>
-                  <button onClick={() => removeFriend(uid, f.uid)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 14 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#FF6B6B"}
-                    onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.2)"}>✕</button>
-                </div>
-                {selectedFriend === f.uid && (
-                  <FriendProfile friendUid={f.uid} myUid={uid} addTask={addTask} addHabit={addHabit} />
-                )}
-              </Card>
-            ))
           )}
+
+          {accepted.map(f => (
+            <FriendCard key={f.uid} friend={f} uid={uid} profile={profile}
+              onRemove={() => removeFriend(uid, f.uid)}
+              onViewProfile={() => onViewProfile(f.uid)}
+              onGift={(amount) => giftGold(profile, f.uid, amount, updateProfile)}
+            />
+          ))}
         </>
       )}
 
-      {/* FIND TAB */}
-      {activeTab === "explore" && (
-        <FindFriends uid={uid} profile={profile} friends={friends} outgoing={outgoing} sendFriendRequest={sendFriendRequest} members={members} />
+      {tab === "invites" && (
+        <TaskInvitesTab invites={taskInvites || []} />
       )}
     </div>
   );
 }
 
-/* ─── Feed Post with comments ────────────────────────────────────────────── */
-function FeedPost({ post: p, profile, roomId, onLike, onComment }) {
+function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }) {
+  const [showGift,  setShowGift]  = useState(false);
+  const [giftAmt,   setGiftAmt]   = useState(10);
+  const [giftStatus,setGiftStatus]= useState(null);
+  const [showTasks, setShowTasks] = useState(false);
+  const [tasks,     setTasks]     = useState([]);
+
+  useEffect(() => {
+    if (!showTasks) return;
+    // Lazy load friend's public tasks via onSnapshot would need hook — simple fetch here
+    import("firebase/firestore").then(({ collection, query, where, orderBy, limit, getDocs }) => {
+      import("../firebase/config").then(({ db }) => {
+        getDocs(query(collection(db,"users",f.uid,"tasks"), where("isPublic","==",true), orderBy("createdAt","desc"), limit(10)))
+          .then(snap => setTasks(snap.docs.map(d => ({id:d.id,...d.data()}))));
+      });
+    });
+  }, [showTasks, f.uid]);
+
+  async function sendGift() {
+    const res = await onGift(giftAmt);
+    setGiftStatus(res?.error ? `error:${res.error}` : "sent");
+  }
+
+  return (
+    <Card style={{ marginBottom:10 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0 }}>
+          <div style={{ width:40, height:40, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{f.avatar}</div>
+        </button>
+        <div style={{ flex:1, cursor:"pointer" }} onClick={onViewProfile}>
+          <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Tap to view profile</div>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift</Btn>
+          <Btn small ghost color="#6C63FF" onClick={() => setShowTasks(v=>!v)}>Tasks</Btn>
+          <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove</Btn>
+        </div>
+      </div>
+
+      {showGift && (
+        <div style={{ marginTop:10, display:"flex", gap:8, alignItems:"center" }}>
+          <select value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"6px 8px", color:"#E8E9F3", fontSize:12, fontFamily:"inherit" }}>
+            {[5,10,25,50,100].map(a => <option key={a} value={a}>{a}🪙</option>)}
+          </select>
+          <Btn small color="#FDCB6E" style={{ color:"#0B0D17" }} onClick={sendGift}>Send Gift</Btn>
+          {giftStatus==="sent" && <span style={{ fontSize:11, color:"#55EFC4" }}>Sent! 🎁</span>}
+          {giftStatus?.startsWith("error:") && <span style={{ fontSize:11, color:"#FF6B6B" }}>{giftStatus.replace("error:","")}</span>}
+        </div>
+      )}
+
+      {showTasks && (
+        <div style={{ marginTop:10 }}>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:6 }}>PUBLIC TASKS</div>
+          {tasks.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>No public tasks</div>}
+          {tasks.map(t => (
+            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+              <div style={{ width:14, height:14, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
+              <span style={{ fontSize:12, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
+              <span style={{ marginLeft:"auto", fontSize:10, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TaskInvitesTab({ invites }) {
+  if (invites.length === 0) return (
+    <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>
+      <div style={{ fontSize:40, marginBottom:8 }}>📨</div>
+      <div>No task invites yet</div>
+    </div>
+  );
+  return invites.map(inv => (
+    <Card key={inv.id} style={{ marginBottom:10 }}>
+      <div style={{ fontSize:13, fontWeight:600 }}>{inv.taskTitle}</div>
+      <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginTop:4 }}>Invited by {inv.fromUid} · +{inv.taskXp}XP</div>
+      <div style={{ fontSize:11, color:inv.status==="pending"?"#FDCB6E":"#55EFC4", marginTop:4 }}>Status: {inv.status}</div>
+    </Card>
+  ));
+}
+
+function FeedCard({ post: p, uid, onLike, onComment, onViewProfile, addTask, addHabit }) {
   const [showComments, setShowComments] = useState(false);
-  const [commentText, setCommentText] = useState("");
+  const [commentText,  setCommentText]  = useState("");
 
   function submitComment() {
-    if (!commentText.trim() || !profile) return;
-    onComment(roomId, p.id, {
-      uid: profile.uid, name: profile.name, avatar: profile.avatar,
-      text: commentText.trim(), ts: new Date().toISOString()
-    });
+    if (!commentText.trim()) return;
+    onComment({ uid, text: commentText.trim() });
     setCommentText("");
   }
 
   return (
-    <div style={{ display: "flex", gap: 10, padding: "12px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, marginBottom: 8 }}>
-      <div style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{p.userAvatar || "🌀"}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 3 }}>
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{p.userName}</span>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
-            {p.ts?.toDate ? p.ts.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
-          </span>
-        </div>
-        <div style={{ fontSize: 13, color: TYPE_COLORS[p.type] || "rgba(255,255,255,0.7)", lineHeight: 1.4 }}>
-          {TYPE_ICONS[p.type] || ""} {p.text}
-        </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 8, alignItems: "center" }}>
-          <button onClick={() => onLike(p.id, !p.likes?.includes(profile?.uid))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: p.likes?.includes(profile?.uid) ? "#FF6B6B" : "rgba(255,255,255,0.3)", padding: 0, fontFamily: "inherit" }}>
-            ❤️ {p.likes?.length || 0}
-          </button>
-          <button onClick={() => setShowComments(v => !v)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,0.3)", padding: 0, fontFamily: "inherit" }}>
-            💬 {p.comments?.length || 0}
-          </button>
-        </div>
-        {showComments && (
-          <div style={{ marginTop: 10 }}>
-            {(p.comments || []).map((c, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 14 }}>{c.avatar}</span>
-                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "5px 8px", flex: 1 }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>{c.name}</div>
-                  <div style={{ fontSize: 12 }}>{c.text}</div>
-                </div>
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <Input value={commentText} onChange={setCommentText} placeholder="Add a comment…" style={{ flex: 1, fontSize: 12 }} onKeyDown={e => e.key === "Enter" && submitComment()} />
-              <Btn small color="#6C63FF" onClick={submitComment}>↑</Btn>
-            </div>
+    <div style={{ padding:"12px 14px", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)", borderRadius:12, marginBottom:8 }}>
+      <div style={{ display:"flex", gap:10 }}>
+        <button onClick={onViewProfile} style={{ background:"none", border:"none", padding:0, cursor:"pointer" }}>
+          <div style={{ width:34, height:34, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{p.userAvatar||"🌀"}</div>
+        </button>
+        <div style={{ flex:1 }}>
+          <div style={{ display:"flex", justifyContent:"space-between" }}>
+            <span style={{ fontWeight:600, fontSize:13, cursor:"pointer" }} onClick={onViewProfile}>{p.userName}</span>
+            <span style={{ fontSize:10, color:"rgba(255,255,255,0.2)" }}>{p.ts?.toDate ? p.ts.toDate().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : ""}</span>
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Friend Profile (public content) ───────────────────────────────────── */
-function FriendProfile({ friendUid, myUid, addTask, addHabit }) {
-  const { tasks, habits, profile } = useFriendContent(friendUid);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [copied, setCopied] = useState(null);
-
-  async function copyTask(task) {
-    await addTask({ title: task.title, desc: task.desc || "", priority: task.priority || "medium", tag: task.tag || "", xp: task.xp || 20, dueTime: "", isPublic: true });
-    setCopied(`task-${task.id}`);
-    setTimeout(() => setCopied(null), 2000);
-  }
-
-  async function copyHabit(habit) {
-    await addHabit({ name: habit.name, icon: habit.icon, color: habit.color, freq: habit.freq || "daily", isPublic: true });
-    setCopied(`habit-${habit.id}`);
-    setTimeout(() => setCopied(null), 2000);
-  }
-
-  return (
-    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 14 }}>
-      {habits.length > 0 && (
-        <>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 8, letterSpacing: "0.08em" }}>PUBLIC HABITS 🔥</div>
-          {habits.map(h => (
-            <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "8px 10px" }}>
-              <span style={{ fontSize: 20 }}>{h.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{h.name}</div>
-                <div style={{ fontSize: 11, color: h.color || "#FDCB6E" }}>🔥 {h.streak || 0} streak</div>
-              </div>
-              <Btn small color="#6C63FF" onClick={() => copyHabit(h)}>
-                {copied === `habit-${h.id}` ? "✓ Copied!" : "Copy"}
-              </Btn>
-            </div>
-          ))}
-        </>
-      )}
-      {tasks.length > 0 && (
-        <>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 8, marginTop: 10, letterSpacing: "0.08em" }}>PUBLIC TASKS ✅</div>
-          {tasks.filter(t => !t.done).map(t => (
-            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "8px 10px" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div>
-                {t.tag && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>#{t.tag}</span>}
-              </div>
-              <Btn small color="#6C63FF" onClick={() => copyTask(t)}>
-                {copied === `task-${t.id}` ? "✓ Copied!" : "Copy"}
-              </Btn>
-            </div>
-          ))}
-        </>
-      )}
-      {tasks.length === 0 && habits.length === 0 && (
-        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.2)", textAlign: "center", padding: "12px 0" }}>No public content yet</div>
-      )}
-    </div>
-  );
-}
-
-/* ─── Find Friends ───────────────────────────────────────────────────────── */
-function FindFriends({ uid, profile, friends, outgoing, sendFriendRequest, members }) {
-  const [targetId, setTargetId] = useState("");
-  const [status, setStatus] = useState(null);
-
-  const friendIds = new Set([...friends.map(f => f.uid), ...outgoing.map(f => f.uid), uid]);
-
-  async function send() {
-    if (!targetId.trim()) return;
-    setStatus("loading");
-    const res = await sendFriendRequest(uid, targetId.trim(), profile);
-    if (res?.error) setStatus(`error:${res.error}`);
-    else { setStatus("sent"); setTargetId(""); }
-  }
-
-  const suggestions = members.filter(m => m.uid !== uid && !friendIds.has(m.uid));
-
-  return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Add by User ID</div>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 10 }}>Go to Profile → copy your UID and share it</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Input value={targetId} onChange={setTargetId} placeholder="Paste friend's user ID…" style={{ flex: 1 }} />
-          <Btn color="#6C63FF" onClick={send}>Add</Btn>
+          <div style={{ fontSize:13, color:TYPE_COLORS[p.type]||"rgba(255,255,255,0.7)", marginTop:2, lineHeight:1.4 }}>
+            {TYPE_ICONS[p.type]||""} {p.text}
+          </div>
+          <div style={{ display:"flex", gap:12, marginTop:8 }}>
+            <button onClick={onLike} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:p.likes?.includes(uid)?"#FF6B6B":"rgba(255,255,255,0.3)", padding:0, fontFamily:"inherit" }}>❤️ {p.likes?.length||0}</button>
+            <button onClick={() => setShowComments(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:"rgba(255,255,255,0.3)", padding:0, fontFamily:"inherit" }}>💬 {p.comments?.length||0}</button>
+          </div>
         </div>
-        {status === "sent" && <div style={{ fontSize: 12, color: "#55EFC4", marginTop: 8 }}>Friend request sent! ✓</div>}
-        {status?.startsWith("error:") && <div style={{ fontSize: 12, color: "#FF6B6B", marginTop: 8 }}>{status.replace("error:", "")}</div>}
-      </Card>
-
-      {suggestions.length > 0 && (
-        <Card>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 12, letterSpacing: "0.08em" }}>PEOPLE IN YOUR SQUAD</div>
-          {suggestions.map(m => {
-            const isPending = outgoing.some(o => o.uid === m.uid);
-            return (
-              <div key={m.uid} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{m.avatar}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.name}</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{m.xp || 0} XP · {m.streak || 0} streak</div>
-                </div>
-                {isPending
-                  ? <span style={{ fontSize: 11, color: "#FDCB6E" }}>Pending…</span>
-                  : <Btn small color="#6C63FF" onClick={() => sendFriendRequest(uid, m.uid, profile)}>+ Add</Btn>
-                }
+      </div>
+      {showComments && (
+        <div style={{ marginTop:10, paddingLeft:44 }}>
+          {(p.comments||[]).map((c,i) => (
+            <div key={i} style={{ display:"flex", gap:6, marginBottom:6 }}>
+              <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"5px 8px", flex:1 }}>
+                <div style={{ fontSize:12 }}>{c.text}</div>
               </div>
-            );
-          })}
-        </Card>
+            </div>
+          ))}
+          <div style={{ display:"flex", gap:6 }}>
+            <Input value={commentText} onChange={setCommentText} placeholder="Comment…" style={{ flex:1, fontSize:12, padding:"6px 10px" }} />
+            <Btn small color="#6C63FF" onClick={submitComment}>↑</Btn>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-/* ═══════════════════════════════ PROFILE PAGE ═════════════════════════════ */
-export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, onLogout, uid }) {
-  const lvl  = getLevel(profile.xp || 0);
-  const prog = xpProgress(profile.xp || 0);
-  const done = tasks.filter(t => t.done).length;
-  const totalLogs  = habits.reduce((a, h) => a + (h.log?.length || 0), 0);
-  const bestStreak = habits.reduce((a, h) => Math.max(a, h.streak || 0), 0);
-  const [copied, setCopied] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editName, setEditName] = useState(profile.name || "");
-  const [editAvatar, setEditAvatar] = useState(profile.avatar || "🦊");
-  const AVATARS = ["🦊","🐼","🦋","🐸","🦄","🐙","🦁","🐺","🐨","🦝","🦩","🐬","🐯","🦅","🐲","🌟","🔥","⚡","🎯","🚀"];
+/* ═════════════════════════════ PROFILE PAGE ═══════════════════════════════ */
+export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, onLogout, uid, rewards, addReward, redeemReward, deleteReward }) {
+  const lvl     = getLevel(profile.xp || 0);
+  const prog    = xpProgress(profile.xp || 0);
+  const unlocks = getLevelUnlocks(lvl);
+  const [tab,       setTab]       = useState("stats");
+  const [editMode,  setEditMode]  = useState(false);
+  const [editName,  setEditName]  = useState(profile.name || "");
+  const [editAvatar,setEditAvatar]= useState(profile.avatar || "🦊");
+  const [copied,    setCopied]    = useState(false);
+  const unlockedAvatars = getUnlockedAvatars(lvl);
+
+  // Reward form
+  const [rewardForm, setRewardForm] = useState({ name:"", description:"", goldCost:50 });
+  const [showRewardForm, setShowRewardForm] = useState(false);
+  const [aiPricing, setAiPricing] = useState(null);
+  const [aiPricingLoading, setAiPricingLoading] = useState(false);
 
   async function saveProfile() {
     if (!editName.trim()) return;
@@ -568,119 +339,325 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
     setEditMode(false);
   }
 
-  const moodCounts = MOODS.map(m => ({
-    ...m, count: moodLog.filter(e => e.mood?.l === m.l).length
-  })).sort((a, b) => b.count - a.count);
-
-  function copyUID() {
-    navigator.clipboard?.writeText(uid || "").then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  async function getAiPrice() {
+    if (!rewardForm.name.trim()) return;
+    setAiPricingLoading(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model:"claude-sonnet-4-20250514", max_tokens:150,
+          messages:[{ role:"user", content:`You are pricing personal rewards in a productivity app where gold is earned through completing real tasks. Suggest a fair gold cost for this personal reward: "${rewardForm.name}". ${rewardForm.description ? `Description: ${rewardForm.description}` : ""}. Consider real-world value, treat 100 gold as roughly equivalent to completing ~5 medium tasks. Reply ONLY with JSON: {"goldCost": 50, "reason": "brief reason"}` }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || "{}";
+      const result = JSON.parse(text.replace(/```json|```/g,"").trim());
+      setAiPricing(result);
+      setRewardForm(f => ({ ...f, goldCost: result.goldCost }));
+    } catch {}
+    setAiPricingLoading(false);
   }
+
+  async function handleAddReward() {
+    if (!rewardForm.name.trim()) return;
+    await addReward(uid, { ...rewardForm });
+    setRewardForm({ name:"", description:"", goldCost:50 });
+    setAiPricing(null);
+    setShowRewardForm(false);
+  }
+
+  const done = tasks.filter(t => t.done).length;
+  const bestStreak = habits.reduce((a,h) => Math.max(a, h.streak||0), 0);
 
   return (
     <div className="fadeUp">
-      <Card style={{ textAlign: "center", marginBottom: 16, background: "linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" }}>
-        {/* Avatar */}
-        {profile.photoURL && !editMode
-          ? <img src={profile.photoURL} alt="" style={{ width: 72, height: 72, borderRadius: "50%", margin: "0 auto 12px", display: "block", border: "3px solid rgba(108,99,255,0.4)" }} />
-          : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 12px", border: "3px solid rgba(108,99,255,0.4)" }}>{editMode ? editAvatar : profile.avatar}</div>
-        }
-
+      {/* Profile card */}
+      <Card style={{ marginBottom:16, textAlign:"center", background:"linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" }}>
         {editMode ? (
-          <div style={{ marginBottom: 12 }}>
-            <input value={editName} onChange={e => setEditName(e.target.value)} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 14px", color: "#E8E9F3", fontSize: 16, fontWeight: 700, width: "100%", textAlign: "center", fontFamily: "inherit", marginBottom: 12, outline: "none" }} placeholder="Your name" />
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 8 }}>PICK AN AVATAR</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 14 }}>
-              {AVATARS.map(av => (
-                <button key={av} onClick={() => setEditAvatar(av)} style={{ width: 38, height: 38, borderRadius: 10, fontSize: 22, cursor: "pointer", border: "none", background: editAvatar === av ? "rgba(108,99,255,0.35)" : "rgba(255,255,255,0.05)", outline: editAvatar === av ? "2px solid #6C63FF" : "none" }}>{av}</button>
+          <>
+            <div style={{ fontSize:56, marginBottom:12 }}>{editAvatar}</div>
+            <input value={editName} onChange={e => setEditName(e.target.value)} style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:10, padding:"8px 14px", color:"#E8E9F3", fontSize:16, fontWeight:700, width:"100%", textAlign:"center", fontFamily:"inherit", marginBottom:14, outline:"none" }} placeholder="Your name" />
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:8, textAlign:"left" }}>PICK AVATAR {lvl < 3 && <span style={{ color:"#FDCB6E" }}>(more unlock at higher levels)</span>}</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", marginBottom:14 }}>
+              {unlockedAvatars.map(av => (
+                <button key={av} onClick={() => setEditAvatar(av)} style={{ width:38, height:38, borderRadius:10, fontSize:22, cursor:"pointer", border:"none", background:editAvatar===av?"rgba(108,99,255,0.35)":"rgba(255,255,255,0.05)", outline:editAvatar===av?"2px solid #6C63FF":"none" }}>{av}</button>
               ))}
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
               <Btn color="#6C63FF" onClick={saveProfile}>Save Changes</Btn>
-              <Btn ghost color="rgba(255,255,255,0.3)" style={{ color: "rgba(255,255,255,0.5)" }} onClick={() => { setEditMode(false); setEditName(profile.name); setEditAvatar(profile.avatar); }}>Cancel</Btn>
+              <Btn ghost color="rgba(255,255,255,0.3)" style={{ color:"rgba(255,255,255,0.5)" }} onClick={() => { setEditMode(false); setEditName(profile.name); setEditAvatar(profile.avatar); }}>Cancel</Btn>
             </div>
-          </div>
+          </>
         ) : (
           <>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>{profile.name}</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{profile.email}</div>
-            <button onClick={() => { setEditMode(true); setEditName(profile.name); setEditAvatar(profile.avatar); }} style={{ background: "rgba(108,99,255,0.15)", border: "1px solid rgba(108,99,255,0.3)", borderRadius: 8, padding: "5px 14px", color: "#A29BFE", fontSize: 12, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>✏️ Edit Profile</button>
+            {profile.photoURL
+              ? <img src={profile.photoURL} alt="" style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 8px", display:"block", border:"3px solid rgba(108,99,255,0.4)" }} />
+              : <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 8px", border:"3px solid rgba(108,99,255,0.4)" }}>{profile.avatar}</div>
+            }
+            <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:2 }}>{profile.name}</div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}</div>
+            <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:10, fontSize:13 }}>
+              <span style={{ color:"#FDCB6E", fontWeight:700 }}>{profile.xp||0} XP</span>
+              <span style={{ color:"#FDCB6E", fontWeight:700 }}>🪙 {profile.gold||0}</span>
+              <span style={{ color:streakColor(lvl), fontWeight:700 }}>🔥 {profile.streak||0}</span>
+            </div>
+            {/* XP bar */}
+            <div style={{ height:6, background:"rgba(255,255,255,0.08)", borderRadius:3, marginBottom:8, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${prog.pct}%`, background:"linear-gradient(90deg,#6C63FF,#FDCB6E)", borderRadius:3, transition:"width 0.6s" }} />
+            </div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", marginBottom:10 }}>{prog.earned}/{prog.needed} XP to next level</div>
+            <div style={{ display:"flex", gap:8, justifyContent:"center", marginBottom:10 }}>
+              <button onClick={() => setEditMode(true)} style={{ background:"rgba(108,99,255,0.15)", border:"1px solid rgba(108,99,255,0.3)", borderRadius:8, padding:"5px 14px", color:"#A29BFE", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>✏️ Edit Profile</button>
+              <button onClick={() => { navigator.clipboard?.writeText(uid).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"5px 14px", color:"rgba(255,255,255,0.5)", fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>{copied ? "Copied! ✓" : "Copy ID"}</button>
+            </div>
           </>
         )}
 
-        {/* UID copy */}
-        <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "6px 12px", marginBottom: 12, cursor: "pointer" }} onClick={copyUID}>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 2 }}>YOUR USER ID (share to add friends)</div>
-          <div style={{ fontSize: 11, color: "#A29BFE", wordBreak: "break-all" }}>{uid}</div>
-          <div style={{ fontSize: 11, color: copied ? "#55EFC4" : "#6C63FF", marginTop: 4 }}>{copied ? "✓ Copied!" : "Tap to copy"}</div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
-          <Tag label={`Level ${lvl}`} color="#FDCB6E" />
-          <Tag label={LEVEL_NAMES[lvl - 1]} color="#6C63FF" />
-          {profile.adhdMode && <Tag label="ADHD Mode 🧠" color="#A29BFE" />}
-        </div>
-        <div style={{ marginBottom: 2 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>
-            <span>{LEVEL_NAMES[lvl - 1]}</span>
-            <span>{prog.earned}/{prog.needed} XP to next level</span>
+        {/* Level unlocks */}
+        {!editMode && (
+          <div style={{ borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10, display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
+            {unlocks.streakShields > 0 && <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>🛡️ {unlocks.streakShields} shield{unlocks.streakShields>1?"s":""}/week</div>}
+            {unlocks.canCreateSquad && <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)" }}>🚀 Can create squads (max {unlocks.maxSquads})</div>}
+            {!unlocks.canCreateSquad && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>🚀 Squad creation unlocks at Level 5</div>}
+            {!unlocks.streakShields && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>🛡️ Streak shields unlock at Level 3</div>}
           </div>
-          <div style={{ height: 8, background: "rgba(255,255,255,0.06)", borderRadius: 4, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${prog.pct}%`, background: "linear-gradient(90deg,#6C63FF,#FDCB6E)", borderRadius: 4, transition: "width 0.5s" }} />
-          </div>
-        </div>
+        )}
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-        {[
-          { icon: "⭐", label: "Total XP",    val: profile.xp || 0,  color: "#FDCB6E" },
-          { icon: "✅", label: "Tasks Done",  val: done,              color: "#55EFC4" },
-          { icon: "🔥", label: "Best Streak", val: `${bestStreak}d`,  color: "#FF6B6B" },
-          { icon: "📅", label: "Habit Logs",  val: totalLogs,         color: "#A29BFE" },
-        ].map(s => (
-          <Card key={s.label} style={{ padding: 14, textAlign: "center" }}>
-            <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 20, color: s.color }}>{s.val}</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{s.label}</div>
-          </Card>
+      {/* Tabs */}
+      <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto" }}>
+        {[["stats","📊 Stats"],["rewards","🎁 Rewards"],["shop","🛒 Shop"]].map(([k,l]) => (
+          <button key={k} onClick={() => setTab(k)} style={{
+            padding:"7px 14px", borderRadius:10, fontSize:12, fontWeight:600, whiteSpace:"nowrap",
+            background:tab===k?"#6C63FF":"rgba(255,255,255,0.06)",
+            border:"none", color:tab===k?"#fff":"rgba(255,255,255,0.4)", cursor:"pointer"
+          }}>{l}</button>
         ))}
       </div>
 
-      {moodLog.length > 0 && (
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", fontWeight: 700, marginBottom: 12, letterSpacing: "0.08em" }}>MOOD PATTERNS</div>
-          {moodCounts.filter(m => m.count > 0).map(m => (
-            <div key={m.l} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <div style={{ fontSize: 20, width: 28 }}>{m.e}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                  <span style={{ color: "rgba(255,255,255,0.65)" }}>{m.l}</span>
-                  <span style={{ color: "rgba(255,255,255,0.3)" }}>{m.count}×</span>
-                </div>
-                <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(m.count / moodLog.length) * 100}%`, background: m.c, borderRadius: 2 }} />
-                </div>
-              </div>
-            </div>
+      {tab === "stats" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          {[
+            { label:"Tasks Done",    val:done,            icon:"✅", color:"#55EFC4" },
+            { label:"Best Streak",   val:`${bestStreak}🔥`,icon:"🔥", color:streakColor(lvl) },
+            { label:"Habits Logged", val:habits.reduce((a,h)=>a+(h.log?.length||0),0), icon:"⚡", color:"#6C63FF" },
+            { label:"Gold Earned",   val:`${profile.gold||0}🪙`, icon:"🪙", color:"#FDCB6E" },
+          ].map(s => (
+            <Card key={s.label} style={{ textAlign:"center", padding:14 }}>
+              <div style={{ fontSize:24, marginBottom:4 }}>{s.icon}</div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20, color:s.color }}>{s.val}</div>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>{s.label}</div>
+            </Card>
           ))}
+        </div>
+      )}
+
+      {tab === "rewards" && (
+        <RewardsTab uid={uid} profile={profile} rewards={rewards||[]} addReward={addReward} redeemReward={redeemReward} deleteReward={deleteReward}
+          showRewardForm={showRewardForm} setShowRewardForm={setShowRewardForm}
+          rewardForm={rewardForm} setRewardForm={setRewardForm}
+          aiPricing={aiPricing} aiPricingLoading={aiPricingLoading}
+          getAiPrice={getAiPrice} handleAddReward={handleAddReward} />
+      )}
+
+      {tab === "shop" && <ShopTab profile={profile} updateProfile={updateProfile} lvl={lvl} />}
+
+      <button onClick={onLogout} style={{ marginTop:20, width:"100%", background:"rgba(255,107,107,0.1)", border:"1px solid rgba(255,107,107,0.2)", color:"#FF6B6B", borderRadius:10, padding:"10px 0", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Sign Out</button>
+    </div>
+  );
+}
+
+/* ─── Rewards Tab ─────────────────────────────────────────────────────────── */
+function RewardsTab({ uid, profile, rewards, addReward, redeemReward, deleteReward, showRewardForm, setShowRewardForm, rewardForm, setRewardForm, aiPricing, aiPricingLoading, getAiPrice, handleAddReward }) {
+  const active   = rewards.filter(r => !r.redeemed);
+  const redeemed = rewards.filter(r => r.redeemed);
+
+  return (
+    <>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div style={{ fontSize:13, color:"rgba(255,255,255,0.4)" }}>🪙 {profile.gold||0} gold available</div>
+        <Btn small color="#FDCB6E" style={{ color:"#0B0D17" }} onClick={() => setShowRewardForm(v=>!v)}>{showRewardForm?"✕":"+ New Reward"}</Btn>
+      </div>
+
+      {showRewardForm && (
+        <Card style={{ marginBottom:14 }}>
+          <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>Create Personal Reward 🎁</div>
+          <Input value={rewardForm.name} onChange={v => setRewardForm(f=>({...f,name:v}))} placeholder="e.g. Get boba 🧋, Buy new shoes 👟" style={{ marginBottom:8 }} />
+          <Input value={rewardForm.description} onChange={v => setRewardForm(f=>({...f,description:v}))} placeholder="Optional description" style={{ marginBottom:8 }} multiline />
+          {aiPricing && (
+            <div style={{ background:"rgba(253,203,110,0.1)", border:"1px solid rgba(253,203,110,0.25)", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#FDCB6E", marginBottom:8 }}>
+              ✨ AI suggests <strong>{aiPricing.goldCost}🪙</strong> — {aiPricing.reason}
+            </div>
+          )}
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+            <select value={rewardForm.goldCost} onChange={e => setRewardForm(f=>({...f,goldCost:Number(e.target.value)}))} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"8px 10px", color:"#E8E9F3", flex:1, fontSize:13, fontFamily:"inherit" }}>
+              {[10,25,50,100,200,500].map(g => <option key={g} value={g}>{g}🪙</option>)}
+            </select>
+            <Btn small ghost color="#FDCB6E" onClick={getAiPrice} disabled={aiPricingLoading}>{aiPricingLoading?"Thinking…":"✨ AI Price"}</Btn>
+          </div>
+          <Btn color="#FDCB6E" style={{ color:"#0B0D17", width:"100%" }} onClick={handleAddReward}>Add Reward 🎁</Btn>
         </Card>
       )}
 
-      <Card style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>ADHD Mode 🧠</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>Simplified UI, extra encouragement</div>
-          </div>
-          <button onClick={() => updateProfile({ adhdMode: !profile.adhdMode })} style={{
-            width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
-            background: profile.adhdMode ? "#6C63FF" : "rgba(255,255,255,0.15)", transition: "all 0.2s", position: "relative"
-          }}>
-            <div style={{ position: "absolute", top: 3, left: profile.adhdMode ? 24 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
-          </button>
+      {active.length === 0 && !showRewardForm && (
+        <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>
+          <div style={{ fontSize:40, marginBottom:8 }}>🎁</div>
+          <div>No rewards yet — add something to work toward!</div>
         </div>
-      </Card>
+      )}
 
-      <Btn ghost color="#FF6B6B" style={{ width: "100%" }} onClick={onLogout}>Sign Out</Btn>
+      {active.map(r => (
+        <Card key={r.id} style={{ marginBottom:10, borderLeft:"3px solid #FDCB6E" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:600, fontSize:14 }}>{r.name}</div>
+              {r.description && <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginTop:2 }}>{r.description}</div>}
+              <div style={{ fontSize:12, color:"#FDCB6E", marginTop:4, fontWeight:700 }}>{r.goldCost}🪙</div>
+            </div>
+            <div style={{ display:"flex", gap:6, flexDirection:"column", alignItems:"flex-end" }}>
+              <Btn small color="#FDCB6E" style={{ color:"#0B0D17" }} disabled={(profile.gold||0) < r.goldCost} onClick={async () => {
+                if ((profile.gold||0) < r.goldCost) return;
+                // This needs updateProfile — handled via parent
+                await redeemReward(uid, r.id);
+              }}>
+                {(profile.gold||0) >= r.goldCost ? "Redeem 🎉" : `Need ${r.goldCost - (profile.gold||0)} more 🪙`}
+              </Btn>
+              <button onClick={() => deleteReward(uid, r.id)} style={{ background:"none", border:"none", color:"rgba(255,107,107,0.5)", fontSize:11, cursor:"pointer", padding:0, fontFamily:"inherit" }}>Remove</button>
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      {redeemed.length > 0 && (
+        <div style={{ marginTop:10 }}>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginBottom:8 }}>REDEEMED</div>
+          {redeemed.map(r => (
+            <div key={r.id} style={{ padding:"8px 12px", background:"rgba(85,239,196,0.06)", borderRadius:10, marginBottom:6, display:"flex", justifyContent:"space-between" }}>
+              <span style={{ fontSize:13, color:"rgba(255,255,255,0.5)", textDecoration:"line-through" }}>{r.name}</span>
+              <span style={{ fontSize:11, color:"#55EFC4" }}>Claimed ✓</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─── Shop Tab ────────────────────────────────────────────────────────────── */
+function ShopTab({ profile, updateProfile, lvl }) {
+  const COSMETICS = [
+    { id:"shield_1",  name:"Streak Shield",        desc:"Protect your streak once",     cost:30,  icon:"🛡️", type:"shield"  },
+    { id:"frame_1",   name:"Golden Frame",          desc:"Gold avatar border",           cost:50,  icon:"🖼️", type:"frame"   },
+    { id:"frame_2",   name:"Cosmic Frame",          desc:"Animated cosmic border",       cost:120, icon:"🌌", type:"frame", minLevel:7 },
+    { id:"banner_1",  name:"Flame Banner",          desc:"Red flame squad banner",       cost:75,  icon:"🔥", type:"banner"  },
+    { id:"banner_2",  name:"Galaxy Banner",         desc:"Purple galaxy squad banner",   cost:150, icon:"🪐", type:"banner", minLevel:9 },
+    { id:"title_1",   name:"Night Owl title",       desc:"Shown on your profile",        cost:40,  icon:"🦉", type:"title"   },
+    { id:"title_2",   name:"Focus Master title",    desc:"Shown on your profile",        cost:80,  icon:"🎯", type:"title"   },
+  ];
+
+  async function buy(item) {
+    if ((profile.gold||0) < item.cost) return;
+    const owned = profile.ownedCosmetics || [];
+    if (owned.includes(item.id)) return;
+    await updateProfile({ gold: (profile.gold||0) - item.cost, ownedCosmetics: [...owned, item.id] });
+  }
+
+  return (
+    <>
+      <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:12 }}>Spend your gold on cosmetics and power-ups 🪙</div>
+      {COSMETICS.map(item => {
+        const owned    = (profile.ownedCosmetics||[]).includes(item.id);
+        const locked   = item.minLevel && lvl < item.minLevel;
+        const canAfford= (profile.gold||0) >= item.cost;
+        return (
+          <Card key={item.id} style={{ marginBottom:10, opacity:locked?0.5:1 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ fontSize:32 }}>{item.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:600, fontSize:14 }}>{item.name}</div>
+                <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{item.desc}</div>
+                {locked && <div style={{ fontSize:11, color:"#FDCB6E", marginTop:2 }}>Unlocks at Level {item.minLevel}</div>}
+              </div>
+              <div style={{ textAlign:"right" }}>
+                {owned
+                  ? <div style={{ fontSize:13, color:"#55EFC4", fontWeight:700 }}>Owned ✓</div>
+                  : locked
+                  ? <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>🔒</div>
+                  : <Btn small color={canAfford?"#FDCB6E":"rgba(255,255,255,0.1)"} style={{ color:canAfford?"#0B0D17":"rgba(255,255,255,0.3)" }} onClick={() => buy(item)} disabled={!canAfford}>{item.cost}🪙</Btn>
+                }
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </>
+  );
+}
+
+/* ═════════════════════════════ PROFILE VIEWER ═════════════════════════════ */
+export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequest, onGiftGold, profile, updateProfile }) {
+  const [targetProfile, setTargetProfile] = useState(null);
+  const [tasks,         setTasks]         = useState([]);
+  const [loading,       setLoading]       = useState(true);
+
+  useEffect(() => {
+    if (!targetUid) return;
+    setLoading(true);
+    fetchUserProfile(targetUid).then(p => { setTargetProfile(p); setLoading(false); });
+    import("firebase/firestore").then(({ collection, query, where, orderBy, limit, getDocs }) => {
+      import("../firebase/config").then(({ db }) => {
+        getDocs(query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), orderBy("createdAt","desc"), limit(10)))
+          .then(snap => setTasks(snap.docs.map(d => ({id:d.id,...d.data()}))));
+      });
+    });
+  }, [targetUid]);
+
+  if (loading || !targetProfile) return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div style={{ fontSize:32, animation:"spin 1s linear infinite" }}>🌀</div>
+    </div>
+  );
+
+  const lvl     = getLevel(targetProfile.xp || 0);
+  const isSelf  = targetUid === currentUid;
+  const sColor  = streakColor(lvl);
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:480, background:"#0F1120", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"85vh", overflowY:"auto" }}>
+        <div style={{ textAlign:"center", marginBottom:20 }}>
+          <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", border:"3px solid rgba(108,99,255,0.4)" }}>{targetProfile.avatar}</div>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>{targetProfile.name}</div>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}</div>
+          <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:8, fontSize:13 }}>
+            <span style={{ color:"#FDCB6E", fontWeight:700 }}>{targetProfile.xp||0} XP</span>
+            <span style={{ color:sColor, fontWeight:700 }}>🔥 {targetProfile.streak||0}</span>
+            <span style={{ color:"#FDCB6E", fontWeight:700 }}>🪙 {targetProfile.gold||0}</span>
+          </div>
+          {!isSelf && (
+            <div style={{ display:"flex", gap:8, justifyContent:"center", marginTop:12 }}>
+              <Btn small color="#6C63FF" onClick={() => onSendFriendRequest(currentUid, profile, targetUid)}>+ Add Friend</Btn>
+              <Btn small ghost color="#FDCB6E" onClick={() => onGiftGold(targetUid)}>🪙 Gift Gold</Btn>
+            </div>
+          )}
+        </div>
+
+        {tasks.length > 0 && (
+          <>
+            <div style={{ fontSize:12, fontWeight:600, color:"rgba(255,255,255,0.4)", marginBottom:10, letterSpacing:"0.05em" }}>PUBLIC TASKS</div>
+            {tasks.map(t => (
+              <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
+                <span style={{ fontSize:13, flex:1, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
+                <span style={{ fontSize:11, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
+              </div>
+            ))}
+          </>
+        )}
+
+        <button onClick={onClose} style={{ width:"100%", marginTop:20, background:"rgba(255,255,255,0.06)", border:"none", color:"rgba(255,255,255,0.4)", borderRadius:10, padding:"10px 0", fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>Close</button>
+      </div>
     </div>
   );
 }

@@ -2,249 +2,314 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
-  setDoc, query, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, where, getDoc
+  setDoc, query, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove,
+  where, getDocs, getDoc
 } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { today } from "../utils";
 
 /* ─── Tasks ──────────────────────────────────────────────────────────────── */
 export function useTasks(uid) {
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!uid) return;
-    const q = query(collection(db, "users", uid, "tasks"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, snap => { setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+    const unsub = onSnapshot(
+      query(collection(db, "users", uid, "tasks"), orderBy("createdAt","desc"), limit(100)),
+      snap => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
     return unsub;
   }, [uid]);
+
   const addTask = useCallback(async (task) => {
     if (!uid) return;
-    await addDoc(collection(db, "users", uid, "tasks"), { ...task, done: false, isPublic: task.isPublic !== false, createdAt: serverTimestamp() });
+    await addDoc(collection(db, "users", uid, "tasks"), {
+      ...task, done: false, subtasks: [], progress: 0,
+      createdAt: serverTimestamp(), completedAt: null,
+      isPublic: task.isPublic !== false,
+    });
   }, [uid]);
-  const toggleTask = useCallback(async (taskId, done) => {
+
+  const toggleTask = useCallback(async (id, done) => {
     if (!uid) return;
-    await updateDoc(doc(db, "users", uid, "tasks", taskId), { done, doneAt: done ? serverTimestamp() : null });
+    await updateDoc(doc(db, "users", uid, "tasks", id), {
+      done, completedAt: done ? new Date().toISOString() : null
+    });
   }, [uid]);
-  const deleteTask = useCallback(async (taskId) => {
+
+  const updateTask = useCallback(async (id, data) => {
     if (!uid) return;
-    await deleteDoc(doc(db, "users", uid, "tasks", taskId));
+    await updateDoc(doc(db, "users", uid, "tasks", id), data);
   }, [uid]);
-  const toggleTaskPrivacy = useCallback(async (taskId, isPublic) => {
+
+  const deleteTask = useCallback(async (id) => {
     if (!uid) return;
-    await updateDoc(doc(db, "users", uid, "tasks", taskId), { isPublic });
+    await deleteDoc(doc(db, "users", uid, "tasks", id));
   }, [uid]);
-  return { tasks, loading, addTask, toggleTask, deleteTask, toggleTaskPrivacy };
+
+  const toggleTaskPrivacy = useCallback(async (id, isPublic) => {
+    if (!uid) return;
+    await updateDoc(doc(db, "users", uid, "tasks", id), { isPublic });
+  }, [uid]);
+
+  const addSubtask = useCallback(async (taskId, subtask) => {
+    if (!uid) return;
+    const taskRef = doc(db, "users", uid, "tasks", taskId);
+    const snap = await getDoc(taskRef);
+    const existing = snap.data()?.subtasks || [];
+    const updated = [...existing, { ...subtask, id: Math.random().toString(36).slice(2), done: false }];
+    const progress = updated.length > 0 ? Math.round(updated.filter(s=>s.done).length / updated.length * 100) : 0;
+    await updateDoc(taskRef, { subtasks: updated, progress });
+  }, [uid]);
+
+  const toggleSubtask = useCallback(async (taskId, subtaskId) => {
+    if (!uid) return;
+    const taskRef = doc(db, "users", uid, "tasks", taskId);
+    const snap = await getDoc(taskRef);
+    const subtasks = (snap.data()?.subtasks || []).map(s => s.id === subtaskId ? { ...s, done: !s.done } : s);
+    const progress = subtasks.length > 0 ? Math.round(subtasks.filter(s=>s.done).length / subtasks.length * 100) : 0;
+    const allDone  = subtasks.length > 0 && subtasks.every(s => s.done);
+    await updateDoc(taskRef, { subtasks, progress, done: allDone });
+  }, [uid]);
+
+  return { tasks, addTask, toggleTask, updateTask, deleteTask, toggleTaskPrivacy, addSubtask, toggleSubtask };
+}
+
+/* ─── Friend public tasks ─────────────────────────────────────────────────── */
+export function useFriendTasks(friendUid) {
+  const [tasks, setTasks] = useState([]);
+  useEffect(() => {
+    if (!friendUid) return;
+    const unsub = onSnapshot(
+      query(collection(db, "users", friendUid, "tasks"), where("isPublic","==",true), orderBy("createdAt","desc"), limit(30)),
+      snap => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return unsub;
+  }, [friendUid]);
+  return tasks;
 }
 
 /* ─── Habits ─────────────────────────────────────────────────────────────── */
 export function useHabits(uid) {
   const [habits, setHabits] = useState([]);
-  const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!uid) return;
-    const q = query(collection(db, "users", uid, "habits"), orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(q, snap => { setHabits(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+    const unsub = onSnapshot(
+      query(collection(db, "users", uid, "habits"), orderBy("createdAt","desc"), limit(50)),
+      snap => setHabits(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
     return unsub;
   }, [uid]);
+
   const addHabit = useCallback(async (habit) => {
     if (!uid) return;
-    await addDoc(collection(db, "users", uid, "habits"), { ...habit, log: [], streak: 0, isPublic: habit.isPublic !== false, createdAt: serverTimestamp() });
+    await addDoc(collection(db, "users", uid, "habits"), {
+      ...habit, log: [], streak: 0, createdAt: serverTimestamp(), isPublic: habit.isPublic !== false
+    });
   }, [uid]);
+
   const checkHabit = useCallback(async (habit) => {
-    if (!uid) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    if (habit.log?.includes(todayStr)) return false;
-    const newLog = [...(habit.log || []), todayStr];
-    const newStreak = calcStreak(newLog);
-    await updateDoc(doc(db, "users", uid, "habits", habit.id), { log: arrayUnion(todayStr), streak: newStreak });
-    return newStreak;
+    if (!uid) return false;
+    const todayStr = today();
+    const log  = habit.log || [];
+    const alreadyDone = log.includes(todayStr);
+    if (alreadyDone) {
+      // Undo: remove today from log
+      const newLog = log.filter(d => d !== todayStr);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+      const streak = newLog.includes(yesterday) ? (habit.streak || 1) - 1 : 0;
+      await updateDoc(doc(db, "users", uid, "habits", habit.id), { log: newLog, streak: Math.max(0, streak) });
+      return "undone";
+    }
+    const newLog = [...log, todayStr];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+    const streak = log.includes(yesterday) ? (habit.streak || 0) + 1 : 1;
+    await updateDoc(doc(db, "users", uid, "habits", habit.id), { log: newLog, streak });
+    return streak;
   }, [uid]);
-  const deleteHabit = useCallback(async (habitId) => {
+
+  const deleteHabit = useCallback(async (id) => {
     if (!uid) return;
-    await deleteDoc(doc(db, "users", uid, "habits", habitId));
+    await deleteDoc(doc(db, "users", uid, "habits", id));
   }, [uid]);
-  const toggleHabitPrivacy = useCallback(async (habitId, isPublic) => {
+
+  const toggleHabitPrivacy = useCallback(async (id, isPublic) => {
     if (!uid) return;
-    await updateDoc(doc(db, "users", uid, "habits", habitId), { isPublic });
+    await updateDoc(doc(db, "users", uid, "habits", id), { isPublic });
   }, [uid]);
-  return { habits, loading, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy };
+
+  return { habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy };
 }
 
-/* ─── Squad Feed ─────────────────────────────────────────────────────────── */
-export function useFeed(roomId) {
-  const [feed, setFeed] = useState([]);
-  useEffect(() => {
-    if (!roomId) return;
-    const q = query(collection(db, "rooms", roomId, "feed"), orderBy("ts", "desc"), limit(50));
-    const unsub = onSnapshot(q, snap => { setFeed(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return unsub;
-  }, [roomId]);
-  const postToFeed = useCallback(async (roomId, post) => {
-    if (!roomId) return;
-    await addDoc(collection(db, "rooms", roomId, "feed"), { ...post, ts: serverTimestamp(), likes: [], comments: [] });
-  }, []);
-  const likePost = useCallback(async (roomId, postId, uid, liked) => {
-    await updateDoc(doc(db, "rooms", roomId, "feed", postId), { likes: liked ? arrayUnion(uid) : arrayRemove(uid) });
-  }, []);
-  const commentOnPost = useCallback(async (roomId, postId, comment) => {
-    await updateDoc(doc(db, "rooms", roomId, "feed", postId), { comments: arrayUnion(comment) });
-  }, []);
-  return { feed, postToFeed, likePost, commentOnPost };
-}
-
-/* ─── Squad Members ──────────────────────────────────────────────────────── */
-export function useSquadMembers(roomId) {
-  const [members, setMembers] = useState([]);
-  useEffect(() => {
-    if (!roomId) return;
-    const unsub = onSnapshot(collection(db, "rooms", roomId, "members"), snap => { setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return unsub;
-  }, [roomId]);
-  const joinRoom = useCallback(async (roomId, profile) => {
-    if (!roomId || !profile) return;
-    await setDoc(doc(db, "rooms", roomId, "members", profile.uid), { uid: profile.uid, name: profile.name, avatar: profile.avatar, xp: profile.xp || 0, streak: profile.streak || 0, updatedAt: serverTimestamp() }, { merge: true });
-  }, []);
-  const updateMemberStats = useCallback(async (roomId, uid, xp, streak) => {
-    if (!roomId || !uid) return;
-    await setDoc(doc(db, "rooms", roomId, "members", uid), { xp, streak, updatedAt: serverTimestamp() }, { merge: true });
-  }, []);
-  return { members, joinRoom, updateMemberStats };
-}
-
-/* ─── Mood Log ───────────────────────────────────────────────────────────── */
+/* ─── Mood ───────────────────────────────────────────────────────────────── */
 export function useMoodLog(uid) {
   const [moodLog, setMoodLog] = useState([]);
   useEffect(() => {
     if (!uid) return;
-    const q = query(collection(db, "users", uid, "moods"), orderBy("ts", "desc"), limit(60));
-    const unsub = onSnapshot(q, snap => { setMoodLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    const unsub = onSnapshot(
+      query(collection(db, "users", uid, "moods"), orderBy("date","desc"), limit(30)),
+      snap => setMoodLog(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
     return unsub;
   }, [uid]);
+
   const logMood = useCallback(async (uid, mood) => {
-    await addDoc(collection(db, "users", uid, "moods"), { mood, date: new Date().toISOString().slice(0, 10), ts: serverTimestamp() });
+    const todayStr = today();
+    const ref = doc(db, "users", uid, "moods", todayStr);
+    await setDoc(ref, { mood, date: todayStr, ts: serverTimestamp() }, { merge: true });
   }, []);
+
   return { moodLog, logMood };
+}
+
+/* ─── Feed ───────────────────────────────────────────────────────────────── */
+export function useFeed(roomId) {
+  const [feed, setFeed] = useState([]);
+  useEffect(() => {
+    if (!roomId) return;
+    const unsub = onSnapshot(
+      query(collection(db, "rooms", roomId, "feed"), orderBy("ts","desc"), limit(60)),
+      snap => setFeed(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return unsub;
+  }, [roomId]);
+
+  const postToFeed = useCallback(async (roomId, post) => {
+    await addDoc(collection(db, "rooms", roomId, "feed"), { ...post, ts: serverTimestamp(), likes: [], comments: [] });
+  }, []);
+
+  const likePost = useCallback(async (roomId, postId, uid, liked) => {
+    await updateDoc(doc(db, "rooms", roomId, "feed", postId), { likes: liked ? arrayUnion(uid) : arrayRemove(uid) });
+  }, []);
+
+  const commentOnPost = useCallback(async (roomId, postId, comment) => {
+    await updateDoc(doc(db, "rooms", roomId, "feed", postId), { comments: arrayUnion(comment) });
+  }, []);
+
+  return { feed, postToFeed, likePost, commentOnPost };
+}
+
+/* ─── Squad Members (global room) ────────────────────────────────────────── */
+export function useSquadMembers(roomId) {
+  const [members, setMembers] = useState([]);
+  useEffect(() => {
+    if (!roomId) return;
+    const unsub = onSnapshot(collection(db, "rooms", roomId, "members"), snap => setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, [roomId]);
+
+  const joinRoom = useCallback(async (roomId, profile) => {
+    if (!profile?.uid) return;
+    await setDoc(doc(db, "rooms", roomId, "members", profile.uid), {
+      uid: profile.uid, name: profile.name, avatar: profile.avatar,
+      xp: profile.xp || 0, streak: profile.streak || 0, gold: profile.gold || 0,
+      joinedAt: serverTimestamp()
+    }, { merge: true });
+  }, []);
+
+  const updateMemberStats = useCallback(async (roomId, uid, xp, streak, gold = 0) => {
+    await updateDoc(doc(db, "rooms", roomId, "members", uid), { xp, streak, gold }).catch(() => {});
+  }, []);
+
+  return { members, joinRoom, updateMemberStats };
 }
 
 /* ─── Friends ────────────────────────────────────────────────────────────── */
 export function useFriends(uid) {
   const [friends, setFriends] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [outgoing, setOutgoing] = useState([]);
-
   useEffect(() => {
     if (!uid) return;
-    const unsub1 = onSnapshot(query(collection(db, "users", uid, "friends"), where("status", "==", "accepted")), snap => setFriends(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsub2 = onSnapshot(query(collection(db, "users", uid, "friends"), where("status", "==", "pending"), where("direction", "==", "incoming")), snap => setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsub3 = onSnapshot(query(collection(db, "users", uid, "friends"), where("status", "==", "pending"), where("direction", "==", "outgoing")), snap => setOutgoing(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub = onSnapshot(collection(db, "users", uid, "friends"), snap => setFriends(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
   }, [uid]);
 
-  const sendFriendRequest = useCallback(async (uid, targetUid, myProfile) => {
-    if (!uid || !targetUid || uid === targetUid) return { error: "Invalid" };
+  const sendFriendRequest = useCallback(async (uid, myProfile, targetUid) => {
+    if (!targetUid || targetUid === uid) return { error: "Invalid user" };
     const targetSnap = await getDoc(doc(db, "users", targetUid));
     if (!targetSnap.exists()) return { error: "User not found" };
-    const tp = targetSnap.data();
-    await setDoc(doc(db, "users", uid, "friends", targetUid), { uid: targetUid, name: tp.name, avatar: tp.avatar, status: "pending", direction: "outgoing", ts: serverTimestamp() });
-    await setDoc(doc(db, "users", targetUid, "friends", uid), { uid, name: myProfile.name, avatar: myProfile.avatar, status: "pending", direction: "incoming", ts: serverTimestamp() });
+    const target = targetSnap.data();
+    await setDoc(doc(db, "users", uid, "friends", targetUid), {
+      uid: targetUid, name: target.name, avatar: target.avatar, status: "pending", direction: "outgoing"
+    });
+    await setDoc(doc(db, "users", targetUid, "friends", uid), {
+      uid, name: myProfile.name, avatar: myProfile.avatar, status: "pending", direction: "incoming"
+    });
     return { success: true };
   }, []);
 
-  const acceptFriendRequest = useCallback(async (uid, fromUid) => {
-    await updateDoc(doc(db, "users", uid, "friends", fromUid), { status: "accepted" });
-    await updateDoc(doc(db, "users", fromUid, "friends", uid), { status: "accepted" });
-  }, []);
-
-  const declineFriendRequest = useCallback(async (uid, fromUid) => {
-    await deleteDoc(doc(db, "users", uid, "friends", fromUid));
-    await deleteDoc(doc(db, "users", fromUid, "friends", uid));
+  const acceptFriend = useCallback(async (uid, friendUid) => {
+    await updateDoc(doc(db, "users", uid, "friends", friendUid), { status: "accepted" });
+    await updateDoc(doc(db, "users", friendUid, "friends", uid), { status: "accepted" }).catch(() => {});
   }, []);
 
   const removeFriend = useCallback(async (uid, friendUid) => {
     await deleteDoc(doc(db, "users", uid, "friends", friendUid));
-    await deleteDoc(doc(db, "users", friendUid, "friends", uid));
+    await deleteDoc(doc(db, "users", friendUid, "friends", uid)).catch(() => {});
   }, []);
 
-  return { friends, requests, outgoing, sendFriendRequest, acceptFriendRequest, declineFriendRequest, removeFriend };
-}
-
-/* ─── Friend public content ──────────────────────────────────────────────── */
-export function useFriendContent(friendUid) {
-  const [tasks, setTasks] = useState([]);
-  const [habits, setHabits] = useState([]);
-  const [profile, setProfile] = useState(null);
-
-  useEffect(() => {
-    if (!friendUid) return;
-    const unsub0 = onSnapshot(doc(db, "users", friendUid), snap => { if (snap.exists()) setProfile(snap.data()); });
-    const q1 = query(collection(db, "users", friendUid, "tasks"), where("isPublic", "==", true), orderBy("createdAt", "desc"), limit(20));
-    const unsub1 = onSnapshot(q1, snap => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const q2 = query(collection(db, "users", friendUid, "habits"), where("isPublic", "==", true), orderBy("createdAt", "asc"), limit(20));
-    const unsub2 = onSnapshot(q2, snap => setHabits(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsub0(); unsub1(); unsub2(); };
-  }, [friendUid]);
-
-  return { tasks, habits, profile };
-}
-
-/* ─── Group Pomodoro ─────────────────────────────────────────────────────── */
-export function useGroupPomodoro(sessionId) {
-  const [session, setSession] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [participants, setParticipants] = useState([]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const unsub1 = onSnapshot(doc(db, "pomodoroSessions", sessionId), snap => { if (snap.exists()) setSession({ id: snap.id, ...snap.data() }); });
-    const unsub2 = onSnapshot(query(collection(db, "pomodoroSessions", sessionId, "messages"), orderBy("ts", "asc"), limit(200)), snap => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsub3 = onSnapshot(collection(db, "pomodoroSessions", sessionId, "participants"), snap => setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsub1(); unsub2(); unsub3(); };
-  }, [sessionId]);
-
-  const createSession = useCallback(async (hostProfile, durationMins) => {
-    const ref = await addDoc(collection(db, "pomodoroSessions"), {
-      hostUid: hostProfile.uid, hostName: hostProfile.name, hostAvatar: hostProfile.avatar,
-      durationMins, status: "waiting", startedAt: null, endsAt: null, createdAt: serverTimestamp(),
+  const inviteFriendToTask = useCallback(async (uid, friendUid, task) => {
+    await setDoc(doc(db, "users", friendUid, "taskInvites", `${uid}_${task.id}`), {
+      fromUid: uid, taskId: task.id, taskTitle: task.title, taskXp: task.xp || 20,
+      ts: serverTimestamp(), status: "pending"
     });
-    await setDoc(doc(db, "pomodoroSessions", ref.id, "participants", hostProfile.uid), { uid: hostProfile.uid, name: hostProfile.name, avatar: hostProfile.avatar, joinedAt: serverTimestamp() });
-    return ref.id;
   }, []);
 
-  const joinSession = useCallback(async (sessionId, profile) => {
-    await setDoc(doc(db, "pomodoroSessions", sessionId, "participants", profile.uid), { uid: profile.uid, name: profile.name, avatar: profile.avatar, joinedAt: serverTimestamp() });
-  }, []);
-
-  const startSession = useCallback(async (sessionId, durationMins) => {
-    const endsAt = new Date(Date.now() + durationMins * 60 * 1000).toISOString();
-    await updateDoc(doc(db, "pomodoroSessions", sessionId), { status: "running", startedAt: serverTimestamp(), endsAt });
-  }, []);
-
-  const endSession = useCallback(async (sessionId) => {
-    await updateDoc(doc(db, "pomodoroSessions", sessionId), { status: "done" });
-  }, []);
-
-  const sendMessage = useCallback(async (sessionId, profile, text) => {
-    await addDoc(collection(db, "pomodoroSessions", sessionId, "messages"), { uid: profile.uid, name: profile.name, avatar: profile.avatar, text, ts: serverTimestamp() });
-  }, []);
-
-  const leaveSession = useCallback(async (sessionId, uid) => {
-    await deleteDoc(doc(db, "pomodoroSessions", sessionId, "participants", uid));
-  }, []);
-
-  return { session, messages, participants, createSession, joinSession, startSession, endSession, sendMessage, leaveSession };
+  return { friends, sendFriendRequest, acceptFriend, removeFriend, inviteFriendToTask };
 }
 
-/* ─── Helpers ────────────────────────────────────────────────────────────── */
-function calcStreak(log) {
-  if (!log?.length) return 0;
-  const sorted = [...new Set(log)].sort().reverse();
-  let streak = 0;
-  let cur = new Date(); cur.setHours(0, 0, 0, 0);
-  for (const d of sorted) {
-    const date = new Date(d + "T00:00:00");
-    const diff = (cur - date) / (1000 * 60 * 60 * 24);
-    if (diff > 1) break;
-    streak++;
-    cur = date;
-  }
-  return streak;
+/* ─── Task Invites ───────────────────────────────────────────────────────── */
+export function useTaskInvites(uid) {
+  const [invites, setInvites] = useState([]);
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(collection(db, "users", uid, "taskInvites"), snap => setInvites(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, [uid]);
+  return invites;
+}
+
+/* ─── Gold & Rewards ─────────────────────────────────────────────────────── */
+export function useGold(uid) {
+  const [rewards, setRewards] = useState([]);
+  const [shieldCount, setShieldCount] = useState(0);
+
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(collection(db, "users", uid, "rewards"), snap => setRewards(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return unsub;
+  }, [uid]);
+
+  const addReward = useCallback(async (uid, reward) => {
+    await addDoc(collection(db, "users", uid, "rewards"), {
+      ...reward, redeemed: false, createdAt: serverTimestamp()
+    });
+  }, []);
+
+  const redeemReward = useCallback(async (uid, rewardId) => {
+    await updateDoc(doc(db, "users", uid, "rewards", rewardId), { redeemed: true, redeemedAt: new Date().toISOString() });
+  }, []);
+
+  const deleteReward = useCallback(async (uid, rewardId) => {
+    await deleteDoc(doc(db, "users", uid, "rewards", rewardId));
+  }, []);
+
+  const giftGold = useCallback(async (fromProfile, toUid, amount, updateProfile) => {
+    if ((fromProfile.gold || 0) < amount) return { error: "Not enough gold" };
+    // Deduct from sender
+    await updateProfile({ gold: (fromProfile.gold || 0) - amount });
+    // Add to receiver
+    const toRef = doc(db, "users", toUid);
+    const toSnap = await getDoc(toRef);
+    if (!toSnap.exists()) return { error: "User not found" };
+    const toData = toSnap.data();
+    await updateDoc(toRef, { gold: (toData.gold || 0) + amount });
+    return { success: true };
+  }, []);
+
+  return { rewards, addReward, redeemReward, deleteReward, giftGold };
+}
+
+/* ─── User Profile Lookup ─────────────────────────────────────────────────── */
+export async function fetchUserProfile(uid) {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }

@@ -1,11 +1,11 @@
 // src/hooks/useAuth.js
 import { useState, useEffect } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, serverTimestamp } from "firebase/firestore";
 import { auth, db, provider } from "../firebase/config";
 
 export function useAuth() {
-  const [user,    setUser]    = useState(undefined); // undefined = loading
+  const [user,    setUser]    = useState(undefined);
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
@@ -17,18 +17,14 @@ export function useAuth() {
         if (snap.exists()) {
           setProfile(snap.data());
         } else {
-          // First time — create profile
           const newProfile = {
-            uid:       firebaseUser.uid,
-            name:      firebaseUser.displayName || "Friend",
-            email:     firebaseUser.email,
-            photoURL:  firebaseUser.photoURL,
-            avatar:    randomAvatar(),
-            xp:        0,
-            streak:    0,
-            adhdMode:  true,
-            lastDate:  today(),
-            joinedAt:  serverTimestamp(),
+            uid:      firebaseUser.uid,
+            name:     firebaseUser.displayName || "Friend",
+            email:    firebaseUser.email,
+            photoURL: firebaseUser.photoURL,
+            avatar:   randomAvatar(),
+            xp:       0, streak: 0, adhdMode: true,
+            lastDate: today(), joinedAt: serverTimestamp(),
           };
           await setDoc(ref, newProfile);
           setProfile(newProfile);
@@ -45,15 +41,41 @@ export function useAuth() {
     try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
   }
 
-  async function logout() {
-    await signOut(auth);
-  }
+  async function logout() { await signOut(auth); }
 
   async function updateProfile(data) {
     if (!user) return;
-    const ref = doc(db, "users", user.uid);
-    await setDoc(ref, data, { merge: true });
+    const uid = user.uid;
+
+    // Update main profile doc
+    await setDoc(doc(db, "users", uid), data, { merge: true });
     setProfile(p => ({ ...p, ...data }));
+
+    // If name or avatar changed, sync everywhere
+    const nameChanged   = data.name   !== undefined;
+    const avatarChanged = data.avatar !== undefined;
+    if (!nameChanged && !avatarChanged) return;
+
+    const updatedName   = data.name   ?? profile?.name;
+    const updatedAvatar = data.avatar ?? profile?.avatar;
+
+    // Sync global squad room members
+    try {
+      const roomId = new URLSearchParams(window.location.search).get("room") || "global_squad_v1";
+      await setDoc(doc(db, "rooms", roomId, "members", uid), { name: updatedName, avatar: updatedAvatar }, { merge: true });
+    } catch (e) { console.error("room sync", e); }
+
+    // Sync all squads this user is in
+    try {
+      const squadsSnap = await getDocs(query(collection(db, "squads"), where("memberIds", "array-contains", uid)));
+      for (const squadDoc of squadsSnap.docs) {
+        const squad = squadDoc.data();
+        const updatedMembers = (squad.members || []).map(m =>
+          m.uid === uid ? { ...m, name: updatedName, avatar: updatedAvatar } : m
+        );
+        await updateDoc(doc(db, "squads", squadDoc.id), { members: updatedMembers });
+      }
+    } catch (e) { console.error("squads sync", e); }
   }
 
   return { user, profile, login, logout, updateProfile };
