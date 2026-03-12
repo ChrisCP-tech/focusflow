@@ -14,7 +14,6 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
 
   return (
     <div className="fadeUp">
-      {/* Greeting */}
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 26 }}>
           Hey {profile.name} {profile.avatar}
@@ -24,7 +23,6 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
         </p>
       </div>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
         {[
           { label: "Streak",  val: `${profile.streak || 0}🔥`, color: "#FDCB6E" },
@@ -38,7 +36,6 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
         ))}
       </div>
 
-      {/* Mood */}
       {!todayMood ? (
         <Card style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>How are you feeling? 🌡</div>
@@ -68,7 +65,6 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
         </Card>
       )}
 
-      {/* Quick tasks */}
       {topTasks.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -79,7 +75,6 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
         </div>
       )}
 
-      {/* Quick habits */}
       {topHabits.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -132,15 +127,15 @@ function MiniHabit({ habit, onCheck }) {
 }
 
 /* ═══════════════════════════════ TASKS PAGE ═══════════════════════════════ */
-export function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
+export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy }) {
   const [show,   setShow]   = useState(false);
   const [filter, setFilter] = useState("all");
-  const [form,   setForm]   = useState({ title: "", desc: "", priority: "medium", tag: "", xp: 20, dueTime: "" });
+  const [form,   setForm]   = useState({ title: "", desc: "", priority: "medium", tag: "", xp: 20, dueTime: "", isPublic: true });
 
   function handleAdd() {
     if (!form.title.trim()) return;
     addTask(form);
-    setForm({ title: "", desc: "", priority: "medium", tag: "", xp: 20, dueTime: "" });
+    setForm({ title: "", desc: "", priority: "medium", tag: "", xp: 20, dueTime: "", isPublic: true });
     setShow(false);
   }
 
@@ -148,6 +143,8 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
   const visible = tasks.filter(t => {
     if (filter === "done") return t.done;
     if (filter === "todo") return !t.done;
+    if (filter === "public") return t.isPublic !== false;
+    if (filter === "private") return t.isPublic === false;
     if (TAGS.includes(filter)) return t.tag === filter;
     return true;
   });
@@ -194,14 +191,21 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
                 <input type="time" value={form.dueTime} onChange={e => setForm(f => ({ ...f, dueTime: e.target.value }))} style={selectStyle} />
               </div>
             </div>
+            {/* Privacy toggle */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{form.isPublic ? "🌐 Public" : "🔒 Private"}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{form.isPublic ? "Friends can see this" : "Only you can see this"}</div>
+              </div>
+              <PrivacyToggle isPublic={form.isPublic} onChange={v => setForm(f => ({ ...f, isPublic: v }))} />
+            </div>
             <Btn color="#6C63FF" onClick={handleAdd}>Add Task ✅</Btn>
           </div>
         </Card>
       )}
 
-      {/* Filter chips */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
-        {["all", "todo", "done", ...TAGS].map(f => (
+        {["all", "todo", "done", "public", "private", ...TAGS].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
             padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
             background: filter === f ? "#6C63FF" : "rgba(255,255,255,0.06)",
@@ -217,13 +221,14 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
           <div>All clear!</div>
         </div>
       )}
-      {visible.map(t => <TaskCard key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} />)}
+      {visible.map(t => <TaskCard key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} onPrivacyToggle={toggleTaskPrivacy} />)}
     </div>
   );
 }
 
-function TaskCard({ task, onToggle, onDelete }) {
+function TaskCard({ task, onToggle, onDelete, onPrivacyToggle }) {
   const colors = { high: "#FF6B6B", medium: "#FDCB6E", low: "#55EFC4" };
+  const isPublic = task.isPublic !== false;
   return (
     <div style={{
       display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px",
@@ -243,10 +248,13 @@ function TaskCard({ task, onToggle, onDelete }) {
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: task.done ? "rgba(255,255,255,0.35)" : "#E8E9F3", textDecoration: task.done ? "line-through" : "none", marginBottom: 4 }}>{task.title}</div>
         {task.desc && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>{task.desc}</div>}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ background: "rgba(253,203,110,0.12)", color: "#FDCB6E", fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4 }}>+{task.xp || 20}XP</span>
           {task.dueTime && <span style={{ background: "rgba(108,99,255,0.15)", color: "#A29BFE", fontSize: 10, padding: "2px 6px", borderRadius: 4 }}>⏰ {task.dueTime}</span>}
           {task.tag && <span style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", fontSize: 10, padding: "2px 6px", borderRadius: 4 }}>#{task.tag}</span>}
+          <button onClick={() => onPrivacyToggle(task.id, !isPublic)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: isPublic ? "#55EFC4" : "rgba(255,255,255,0.3)", padding: 0 }}>
+            {isPublic ? "🌐 public" : "🔒 private"}
+          </button>
         </div>
       </div>
       <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.15)", cursor: "pointer", fontSize: 14, padding: 4, flexShrink: 0, transition: "color 0.15s" }}
@@ -257,15 +265,15 @@ function TaskCard({ task, onToggle, onDelete }) {
 }
 
 /* ═══════════════════════════════ HABITS PAGE ══════════════════════════════ */
-export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit }) {
+export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy }) {
   const [show, setShow] = useState(false);
-  const [form, setForm] = useState({ name: "", icon: "🌟", color: "#6C63FF", freq: "daily" });
+  const [form, setForm] = useState({ name: "", icon: "🌟", color: "#6C63FF", freq: "daily", isPublic: true });
   const todayStr = today();
 
   function handleAdd() {
     if (!form.name.trim()) return;
     addHabit(form);
-    setForm({ name: "", icon: "🌟", color: "#6C63FF", freq: "daily" });
+    setForm({ name: "", icon: "🌟", color: "#6C63FF", freq: "daily", isPublic: true });
     setShow(false);
   }
 
@@ -308,6 +316,14 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit }) {
                 ))}
               </div>
             </div>
+            {/* Privacy toggle */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{form.isPublic ? "🌐 Public" : "🔒 Private"}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>{form.isPublic ? "Friends can see this" : "Only you can see this"}</div>
+              </div>
+              <PrivacyToggle isPublic={form.isPublic} onChange={v => setForm(f => ({ ...f, isPublic: v }))} />
+            </div>
             <Btn color={form.color} style={{ color: form.color === "#FDCB6E" ? "#0B0D17" : "#fff" }} onClick={handleAdd}>Add Habit</Btn>
           </div>
         </Card>
@@ -315,6 +331,7 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit }) {
 
       {habits.map(h => {
         const done = h.log?.includes(todayStr);
+        const isPublic = h.isPublic !== false;
         const weekDays = Array.from({ length: 7 }).map((_, i) => {
           const d = new Date(); d.setDate(d.getDate() - 6 + i);
           return d.toISOString().slice(0, 10);
@@ -324,13 +341,17 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
               <div style={{
                 width: 44, height: 44, borderRadius: 12,
-                background: `${h.color || "#6C63FF"}22`,
-                border: `1px solid ${h.color || "#6C63FF"}40`,
+                background: `${h.color || "#6C63FF"}22`, border: `1px solid ${h.color || "#6C63FF"}40`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22
               }}>{h.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 15 }}>{h.name}</div>
-                <div style={{ fontSize: 12, color: h.color || "#FDCB6E", fontWeight: 700 }}>🔥 {h.streak || 0} day streak</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: h.color || "#FDCB6E", fontWeight: 700 }}>🔥 {h.streak || 0} day streak</div>
+                  <button onClick={() => toggleHabitPrivacy(h.id, !isPublic)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: isPublic ? "#55EFC4" : "rgba(255,255,255,0.3)", padding: 0 }}>
+                    {isPublic ? "🌐" : "🔒"}
+                  </button>
+                </div>
               </div>
               {!done
                 ? <Btn small color={h.color || "#FDCB6E"} style={{ color: h.color === "#FDCB6E" ? "#0B0D17" : "#fff" }} onClick={() => checkHabit(h)}>Log it!</Btn>
@@ -356,6 +377,18 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit }) {
         );
       })}
     </div>
+  );
+}
+
+/* ─── Privacy Toggle ─────────────────────────────────────────────────────── */
+export function PrivacyToggle({ isPublic, onChange }) {
+  return (
+    <button onClick={() => onChange(!isPublic)} style={{
+      width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+      background: isPublic ? "#55EFC4" : "rgba(255,255,255,0.15)", transition: "all 0.2s", position: "relative", flexShrink: 0
+    }}>
+      <div style={{ position: "absolute", top: 3, left: isPublic ? 24 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+    </button>
   );
 }
 

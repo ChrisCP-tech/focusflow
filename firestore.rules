@@ -2,29 +2,54 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own data
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Users and their subcollections
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
 
       match /tasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Owner can read/write all; others can only read public ones
+        allow read: if request.auth != null && (
+          request.auth.uid == uid || resource.data.isPublic == true
+        );
+        allow write: if request.auth != null && request.auth.uid == uid;
       }
+
       match /habits/{habitId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && (
+          request.auth.uid == uid || resource.data.isPublic == true
+        );
+        allow write: if request.auth != null && request.auth.uid == uid;
       }
+
       match /moods/{moodId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /friends/{friendId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if request.auth != null;
       }
     }
 
-    // Squad rooms — any authenticated user can read/write
+    // Squad rooms
     match /rooms/{roomId} {
-      allow read, write: if request.auth != null;
-
       match /feed/{postId} {
         allow read, write: if request.auth != null;
       }
       match /members/{memberId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // Group Pomodoro sessions
+    match /pomodoroSessions/{sessionId} {
+      allow read, write: if request.auth != null;
+
+      match /messages/{msgId} {
+        allow read, write: if request.auth != null;
+      }
+      match /participants/{uid} {
         allow read, write: if request.auth != null;
       }
     }

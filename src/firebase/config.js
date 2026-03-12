@@ -13,12 +13,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDB78Mesjcd0gINo_UGiv-oP-RENebcyOU",
-  authDomain: "focusflow-1b7f2.firebaseapp.com",
-  projectId: "focusflow-1b7f2",
-  storageBucket: "focusflow-1b7f2.firebasestorage.app",
-  messagingSenderId: "884704547050",
-  appId: "1:884704547050:web:c6e2a2132fabdeb1c5c793"
+  // PASTE YOUR CONFIG HERE — looks like this:
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 const app        = initializeApp(firebaseConfig);

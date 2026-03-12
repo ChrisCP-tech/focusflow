@@ -11,7 +11,6 @@ import { XPToast, Confetti } from "./components/UI";
 import { HomePage, TasksPage, HabitsPage } from "./components/Pages";
 import { FocusPage, SocialPage, ProfilePage } from "./components/MorePages";
 
-/* ─── Inject global CSS ──────────────────────────────────────────────────── */
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,17 +31,15 @@ if (!document.getElementById("ff-styles")) {
   document.head.appendChild(el);
 }
 
-/* ─── Default squad room ─────────────────────────────────────────────────── */
 function getRoomId() {
   const url = new URLSearchParams(window.location.search).get("room");
   return url || "global_squad_v1";
 }
 
-/* ─── Sample starter habits ──────────────────────────────────────────────── */
 const STARTER_HABITS = [
-  { name: "Drink water",      icon: "💧", color: "#74B9FF", freq: "daily" },
-  { name: "Move your body",   icon: "🏃", color: "#55EFC4", freq: "daily" },
-  { name: "Wind-down routine",icon: "😴", color: "#A29BFE", freq: "daily" },
+  { name: "Drink water",       icon: "💧", color: "#74B9FF", freq: "daily", isPublic: true },
+  { name: "Move your body",    icon: "🏃", color: "#55EFC4", freq: "daily", isPublic: true },
+  { name: "Wind-down routine", icon: "😴", color: "#A29BFE", freq: "daily", isPublic: true },
 ];
 
 export default function App() {
@@ -50,35 +47,31 @@ export default function App() {
   const uid    = user?.uid;
   const roomId = getRoomId();
 
-  const { tasks,  addTask,   toggleTask,  deleteTask  } = useTasks(uid);
-  const { habits, addHabit,  checkHabit,  deleteHabit } = useHabits(uid);
-  const { feed,   postToFeed, likePost                } = useFeed(roomId);
-  const { members, joinRoom, updateMemberStats        } = useSquadMembers(roomId);
-  const { moodLog, logMood                            } = useMoodLog(uid);
+  const { tasks,  addTask,   toggleTask,  deleteTask,  toggleTaskPrivacy  } = useTasks(uid);
+  const { habits, addHabit,  checkHabit,  deleteHabit, toggleHabitPrivacy } = useHabits(uid);
+  const { feed,   postToFeed, likePost, commentOnPost                      } = useFeed(roomId);
+  const { members, joinRoom, updateMemberStats                             } = useSquadMembers(roomId);
+  const { moodLog, logMood                                                 } = useMoodLog(uid);
 
   const [page,     setPage]    = useState("home");
   const [xpToast,  setXpToast] = useState(null);
   const [confetti, setConfetti] = useState(false);
   const [seeded,   setSeeded]  = useState(false);
 
-  /* ── Once profile is ready: join room + seed habits ── */
   useEffect(() => {
     if (!profile || !uid || seeded) return;
     setSeeded(true);
     joinRoom(roomId, profile);
-    // Seed starter habits for brand new users
     if (habits.length === 0) {
       STARTER_HABITS.forEach(h => addHabit(h));
     }
   }, [profile, uid]);
 
-  /* ── Keep squad member stats up to date ── */
   useEffect(() => {
     if (!profile || !uid) return;
     updateMemberStats(roomId, uid, profile.xp || 0, profile.streak || 0);
   }, [profile?.xp, profile?.streak]);
 
-  /* ── XP award helper ── */
   const awardXP = useCallback(async (amount, label) => {
     if (!uid || !profile) return;
     const newXP = (profile.xp || 0) + amount;
@@ -88,7 +81,6 @@ export default function App() {
     await feedPost(`earned ${amount} XP for: ${label} ✨`, "xp");
   }, [uid, profile]);
 
-  /* ── Feed post helper ── */
   const feedPost = useCallback(async (text, type = "update") => {
     if (!profile) return;
     await postToFeed(roomId, {
@@ -96,7 +88,6 @@ export default function App() {
     });
   }, [uid, profile, roomId]);
 
-  /* ── Task complete ── */
   async function handleCompleteTask(task) {
     if (task.done) { await toggleTask(task.id, false); return; }
     await toggleTask(task.id, true);
@@ -104,35 +95,33 @@ export default function App() {
     await feedPost(`completed task: "${task.title}" ✅`, "task");
   }
 
-  /* ── Habit check ── */
   async function handleCheckHabit(habit) {
     const streak = await checkHabit(habit);
-    if (streak === false) return; // already done today
+    if (streak === false) return;
     await awardXP(10 + (streak || 0) * 2, `habit: ${habit.name}`);
     await feedPost(`completed habit: "${habit.name}" 🔥 (${streak} day streak!)`, "habit");
   }
 
-  /* ── Mood log ── */
   async function handleMood(mood) {
     await logMood(uid, mood);
     await feedPost(`feeling ${mood.e} ${mood.l} today`, "mood");
   }
 
-  /* ── Like post ── */
   async function handleLike(postId, liked) {
     await likePost(roomId, postId, uid, liked);
   }
 
-  /* ── Focus complete ── */
+  async function handleComment(roomId, postId, comment) {
+    await commentOnPost(roomId, postId, comment);
+  }
+
   async function handleFocusComplete() {
     await awardXP(40, "focus session");
     await feedPost("just finished a focus session 🎯", "xp");
   }
 
-  /* ── Onboard create ── */
   async function handleCreate(data) {
     await updateProfile(data);
-    // Post join message
     await postToFeed(roomId, {
       userId: uid, userName: data.name,
       userAvatar: data.avatar, text: "just joined FocusFlow! 👋", type: "join"
@@ -140,7 +129,6 @@ export default function App() {
     await joinRoom(roomId, { ...profile, ...data });
   }
 
-  /* ── LOADING ── */
   if (user === undefined) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 16 }}>
@@ -150,13 +138,9 @@ export default function App() {
     );
   }
 
-  /* ── NOT LOGGED IN ── */
   if (!user) return <LoginScreen onLogin={login} />;
-
-  /* ── ONBOARDING ── */
   if (user && !profile?.name) return <Onboard firebaseUser={user} onCreate={handleCreate} />;
 
-  /* ── MAIN APP ── */
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {xpToast  && <XPToast xp={xpToast} onDone={() => setXpToast(null)} />}
@@ -176,23 +160,24 @@ export default function App() {
           <TasksPage tasks={tasks} addTask={addTask} toggleTask={async (id, done) => {
             const task = tasks.find(t => t.id === id);
             if (task) await handleCompleteTask({ ...task, done: !done });
-          }} deleteTask={deleteTask} />
+          }} deleteTask={deleteTask} toggleTaskPrivacy={toggleTaskPrivacy} />
         )}
         {page === "habits" && (
-          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit} deleteHabit={deleteHabit} />
+          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit} deleteHabit={deleteHabit} toggleHabitPrivacy={toggleHabitPrivacy} />
         )}
-        {page === "focus"  && <FocusPage onComplete={handleFocusComplete} />}
+        {page === "focus"  && <FocusPage onComplete={handleFocusComplete} profile={profile} />}
         {page === "social" && (
           <SocialPage
             feed={feed} members={members} profile={profile}
-            roomId={roomId} onPost={feedPost} onLike={handleLike}
+            roomId={roomId} onPost={feedPost} onLike={handleLike} onComment={handleComment}
+            uid={uid} addTask={addTask} addHabit={addHabit}
           />
         )}
         {page === "profile" && (
           <ProfilePage
             profile={profile} updateProfile={updateProfile}
             tasks={tasks} habits={habits} moodLog={moodLog}
-            onLogout={logout}
+            onLogout={logout} uid={uid}
           />
         )}
       </div>
