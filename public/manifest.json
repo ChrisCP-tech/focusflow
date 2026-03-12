@@ -1,0 +1,17 @@
+{
+  "short_name": "FocusFlow",
+  "name": "FocusFlow — ADHD Planner",
+  "description": "Your ADHD-friendly squad planner",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0B0D17",
+  "background_color": "#0B0D17",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://fav.farm/🧠",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
