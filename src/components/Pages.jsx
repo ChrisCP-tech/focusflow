@@ -11,6 +11,178 @@ const selectStyle = {
   borderRadius:8, padding:"8px 10px", color:"#E8E9F3", width:"100%", fontSize:13, fontFamily:"inherit"
 };
 
+/* ═══════════════════════════════ MOOD CHECK-IN ════════════════════════════ */
+const ENERGY_DOTS  = ["💀","😴","😐","⚡","🚀"];
+const ANXIETY_DOTS = ["😌","🙂","😐","😰","🤯"];
+const FOCUS_DOTS   = ["🌫️","😶","🙂","🎯","⚡"];
+
+function DotScale({ label, dots, value, onChange, color }) {
+  return (
+    <div style={{ marginBottom:12 }}>
+      <div style={{ fontSize:11, color:"rgba(255,255,255,0.45)", fontWeight:600, marginBottom:6, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
+      <div style={{ display:"flex", gap:6 }}>
+        {dots.map((d, i) => (
+          <button key={i} onClick={() => onChange(i+1)} style={{
+            flex:1, background: value===i+1 ? `${color}30` : "rgba(255,255,255,0.04)",
+            border: `1.5px solid ${value===i+1 ? color : "rgba(255,255,255,0.08)"}`,
+            borderRadius:10, padding:"8px 4px", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:3, transition:"all 0.15s"
+          }}>
+            <span style={{ fontSize:18 }}>{d}</span>
+            <span style={{ fontSize:9, color: value===i+1 ? color : "rgba(255,255,255,0.3)", fontWeight:700 }}>{i+1}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MoodCheckIn({ todayMood, onMood }) {
+  const [step, setStep]       = useState(null); // null | "emotion" | "scales"
+  const [picked, setPicked]   = useState(null);
+  const [energy, setEnergy]   = useState(null);
+  const [anxiety, setAnxiety] = useState(null);
+  const [focus, setFocus]     = useState(null);
+
+  const hasCheckedIn = !!todayMood;
+
+  function startCheckin() {
+    setPicked(todayMood?.mood || null);
+    setEnergy(todayMood?.energy || null);
+    setAnxiety(todayMood?.anxiety || null);
+    setFocus(todayMood?.focus || null);
+    setStep("emotion");
+  }
+
+  function handlePickEmotion(m) {
+    setPicked(m);
+    setStep("scales");
+  }
+
+  function handleSave() {
+    if (!picked) return;
+    onMood({ mood: picked, energy, anxiety, focus });
+    setStep(null);
+  }
+
+  // Summary view when already checked in
+  if (hasCheckedIn && step === null) {
+    const m = todayMood.mood;
+    return (
+      <Card style={{ marginBottom:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>Today's Check-In ✅</div>
+          <button onClick={startCheckin} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:11, cursor:"pointer", fontWeight:600 }}>Edit 💭</button>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: (todayMood.energy||todayMood.anxiety||todayMood.focus) ? 12 : 0 }}>
+          <div style={{ fontSize:32 }}>{m.e}</div>
+          <div>
+            <div style={{ fontWeight:800, fontSize:15, color:m.c }}>{m.l}</div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Feeling today</div>
+          </div>
+        </div>
+        {(todayMood.energy || todayMood.anxiety || todayMood.focus) && (
+          <div style={{ display:"flex", gap:8 }}>
+            {todayMood.energy  && <div style={{ flex:1, background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"6px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:16 }}>{ENERGY_DOTS[todayMood.energy-1]}</div>
+              <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)", marginTop:2 }}>Energy {todayMood.energy}/5</div>
+            </div>}
+            {todayMood.anxiety && <div style={{ flex:1, background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"6px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:16 }}>{ANXIETY_DOTS[todayMood.anxiety-1]}</div>
+              <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)", marginTop:2 }}>Anxiety {todayMood.anxiety}/5</div>
+            </div>}
+            {todayMood.focus   && <div style={{ flex:1, background:"rgba(255,255,255,0.05)", borderRadius:8, padding:"6px 8px", textAlign:"center" }}>
+              <div style={{ fontSize:16 }}>{FOCUS_DOTS[todayMood.focus-1]}</div>
+              <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)", marginTop:2 }}>Focus {todayMood.focus}/5</div>
+            </div>}
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  // Prompt to check in
+  if (!hasCheckedIn && step === null) {
+    return (
+      <Card style={{ marginBottom:20 }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>How are you feeling today? 🌡</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          {MOODS.slice(0,8).map(m => (
+            <button key={m.l} onClick={() => { setPicked(m); setStep("scales"); }} style={{
+              background:`${m.c}15`, border:`1.5px solid ${m.c}40`,
+              borderRadius:10, padding:"8px 10px", cursor:"pointer",
+              display:"flex", alignItems:"center", gap:5, transition:"all 0.15s"
+            }}>
+              <span style={{ fontSize:18 }}>{m.e}</span>
+              <span style={{ fontSize:11, color:m.c, fontWeight:700 }}>{m.l}</span>
+            </button>
+          ))}
+          <button onClick={startCheckin} style={{
+            background:"rgba(255,255,255,0.05)", border:"1.5px solid rgba(255,255,255,0.1)",
+            borderRadius:10, padding:"8px 12px", cursor:"pointer", color:"rgba(255,255,255,0.5)", fontSize:11, fontWeight:600
+          }}>More emotions →</button>
+        </div>
+      </Card>
+    );
+  }
+
+  // Step 1: Full emotion grid
+  if (step === "emotion") {
+    return (
+      <Card style={{ marginBottom:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>Pick your emotion</div>
+          <button onClick={() => setStep(null)} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.35)", fontSize:18, cursor:"pointer", lineHeight:1 }}>×</button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:6 }}>
+          {MOODS.map(m => (
+            <button key={m.l} onClick={() => handlePickEmotion(m)} style={{
+              background: picked?.l===m.l ? `${m.c}35` : `${m.c}10`,
+              border:`1.5px solid ${picked?.l===m.l ? m.c : `${m.c}25`}`,
+              borderRadius:10, padding:"8px 4px", cursor:"pointer",
+              display:"flex", flexDirection:"column", alignItems:"center", gap:3, transition:"all 0.15s"
+            }}>
+              <span style={{ fontSize:22 }}>{m.e}</span>
+              <span style={{ fontSize:8, color:m.c, fontWeight:700, textAlign:"center", lineHeight:1.2 }}>{m.l}</span>
+            </button>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  // Step 2: Energy/Anxiety/Focus scales
+  if (step === "scales") {
+    return (
+      <Card style={{ marginBottom:20 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:24 }}>{picked?.e}</span>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:picked?.c }}>{picked?.l}</div>
+              <button onClick={() => setStep("emotion")} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.35)", fontSize:10, cursor:"pointer", padding:0 }}>← Change emotion</button>
+            </div>
+          </div>
+          <button onClick={() => setStep(null)} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.35)", fontSize:18, cursor:"pointer", lineHeight:1 }}>×</button>
+        </div>
+        <DotScale label="Energy Level" dots={ENERGY_DOTS}  value={energy}  onChange={setEnergy}  color="#55EFC4" />
+        <DotScale label="Anxiety Level" dots={ANXIETY_DOTS} value={anxiety} onChange={setAnxiety} color="#FF7675" />
+        <DotScale label="Focus Level"  dots={FOCUS_DOTS}   value={focus}   onChange={setFocus}   color="#6C63FF" />
+        <button onClick={handleSave} style={{
+          width:"100%", background: picked ? `${picked.c}25` : "rgba(255,255,255,0.08)",
+          border:`1.5px solid ${picked ? picked.c : "rgba(255,255,255,0.1)"}`,
+          borderRadius:10, padding:"10px", cursor:"pointer",
+          color: picked?.c || "white", fontWeight:700, fontSize:13, marginTop:4
+        }}>
+          Save Check-In ✓
+        </button>
+      </Card>
+    );
+  }
+
+  return null;
+}
+
 /* ═══════════════════════════════ HOME PAGE ════════════════════════════════ */
 export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit, onCompleteTask, setPage }) {
   const todayStr   = today();
@@ -57,25 +229,8 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
         </div>
       )}
 
-      {/* Mood — always allow change */}
-      <Card style={{ marginBottom:20 }}>
-        <div style={{ fontSize:13, fontWeight:600, marginBottom:10 }}>
-          {todayMood ? `Feeling ${todayMood.mood.l} — tap to change 💭` : "How are you feeling? 🌡"}
-        </div>
-        <div style={{ display:"flex", gap:6, justifyContent:"space-between" }}>
-          {MOODS.map(m => (
-            <button key={m.l} onClick={() => onMood(m)} style={{
-              flex:1, background:todayMood?.mood?.l===m.l ? `${m.c}40` : `${m.c}15`,
-              border:`1.5px solid ${todayMood?.mood?.l===m.l ? m.c : `${m.c}30`}`,
-              borderRadius:10, padding:"8px 4px", cursor:"pointer",
-              display:"flex", flexDirection:"column", alignItems:"center", gap:3, transition:"all 0.15s"
-            }}>
-              <div style={{ fontSize:20 }}>{m.e}</div>
-              <div style={{ fontSize:9, color:m.c, fontWeight:700, textAlign:"center", lineHeight:1.2 }}>{m.l}</div>
-            </button>
-          ))}
-        </div>
-      </Card>
+      {/* Mood Check-In */}
+      <MoodCheckIn todayMood={todayMood} onMood={onMood} />
 
       {topTasks.length > 0 && (
         <div style={{ marginBottom:20 }}>

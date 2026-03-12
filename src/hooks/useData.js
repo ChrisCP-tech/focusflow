@@ -156,8 +156,8 @@ export function useMoodLog(uid) {
     );
   }, [uid]);
 
-  const logMood = useCallback(async (uid, mood) => {
-    await setDoc(doc(db, "users", uid, "moods", today()), { mood, date: today(), ts: serverTimestamp() }, { merge: true });
+  const logMood = useCallback(async (uid, { mood, energy, anxiety, focus }) => {
+    await setDoc(doc(db, "users", uid, "moods", today()), { mood, energy: energy||null, anxiety: anxiety||null, focus: focus||null, date: today(), ts: serverTimestamp() }, { merge: true });
   }, []);
 
   return { moodLog, logMood };

@@ -174,9 +174,14 @@ export default function App() {
     await feedPost(`completed habit: "${habit.name}" 🔥 (${result} day streak!)`, "habit");
   }
 
-  async function handleMood(mood) {
-    await logMood(uid, mood);
-    await feedPost(`feeling ${mood.e} ${mood.l} today`, "mood");
+  async function handleMood({ mood, energy, anxiety, focus }) {
+    await logMood(uid, { mood, energy, anxiety, focus });
+    const extras = [
+      energy  && `energy ${energy}/5`,
+      anxiety && `anxiety ${anxiety}/5`,
+      focus   && `focus ${focus}/5`,
+    ].filter(Boolean).join(", ");
+    await feedPost(`feeling ${mood.e} ${mood.l} today${extras ? ` · ${extras}` : ""}`, "mood");
   }
 
   async function handleFocusComplete() {
@@ -303,4 +308,3 @@ export default function App() {
     </div>
   );
 }
- 

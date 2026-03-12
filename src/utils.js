@@ -11,12 +11,27 @@ export const AVATARS_BY_LEVEL = {
 export const ALL_AVATARS = Object.values(AVATARS_BY_LEVEL).flat();
 export const AVATARS  = AVATARS_BY_LEVEL[1];
 export const TAGS     = ["work","study","health","creative","social","errands","other"];
-export const MOODS    = [
+export const MOODS = [
+  { e:"😄", l:"Happy",       c:"#FDCB6E" },
+  { e:"🥰", l:"Loved",       c:"#FD79A8" },
+  { e:"😎", l:"Confident",   c:"#6C63FF" },
+  { e:"⚡", l:"Energized",   c:"#55EFC4" },
+  { e:"🎯", l:"Focused",     c:"#00CEC9" },
+  { e:"😌", l:"Calm",        c:"#74B9FF" },
+  { e:"🙂", l:"Okay",        c:"#A29BFE" },
+  { e:"😐", l:"Meh",         c:"#b2bec3" },
+  { e:"😔", l:"Down",        c:"#636e72" },
+  { e:"😰", l:"Anxious",     c:"#FF7675" },
+  { e:"😤", l:"Frustrated",  c:"#E17055" },
+  { e:"😢", l:"Sad",         c:"#74B9FF" },
   { e:"😵‍💫", l:"Overwhelmed", c:"#FF6B6B" },
-  { e:"😴",   l:"Low Energy",  c:"#A29BFE" },
-  { e:"😐",   l:"Meh",         c:"#74B9FF" },
-  { e:"🙂",   l:"Okay",        c:"#55EFC4" },
-  { e:"⚡",   l:"Hyperfocus!", c:"#FDCB6E" },
+  { e:"🤯", l:"Scattered",   c:"#fd79a8" },
+  { e:"😴", l:"Exhausted",   c:"#A29BFE" },
+  { e:"🥱", l:"Bored",       c:"#b2bec3" },
+  { e:"😤", l:"Stressed",    c:"#d63031" },
+  { e:"🤩", l:"Excited",     c:"#FDCB6E" },
+  { e:"😇", l:"Grateful",    c:"#55EFC4" },
+  { e:"🤔", l:"Unsure",      c:"#74B9FF" },
 ];
 export const HABIT_ICONS   = ["🌟","💧","🏃","📚","🧘","💪","🥗","😴","🎨","🎵","✍️","🧹","🌿","🧠","❤️","🎯"];
 export const HABIT_COLORS  = ["#6C63FF","#FDCB6E","#55EFC4","#FF6B6B","#A29BFE","#74B9FF","#FD79A8","#00CEC9"];
