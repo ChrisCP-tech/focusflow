@@ -1,14 +1,17 @@
 // src/hooks/useAuth.js
 import { useState, useEffect } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, provider } from "../firebase/config";
 
 export function useAuth() {
-  const [user,    setUser]    = useState(undefined); // undefined = loading
+  const [user,    setUser]    = useState(undefined);
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
+    // Handle redirect result when page loads back
+    getRedirectResult(auth).catch(console.error);
+
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
@@ -17,18 +20,17 @@ export function useAuth() {
         if (snap.exists()) {
           setProfile(snap.data());
         } else {
-          // First time — create profile
           const newProfile = {
-            uid:       firebaseUser.uid,
-            name:      firebaseUser.displayName || "Friend",
-            email:     firebaseUser.email,
-            photoURL:  firebaseUser.photoURL,
-            avatar:    randomAvatar(),
-            xp:        0,
-            streak:    0,
-            adhdMode:  true,
-            lastDate:  today(),
-            joinedAt:  serverTimestamp(),
+            uid:      firebaseUser.uid,
+            name:     firebaseUser.displayName || "Friend",
+            email:    firebaseUser.email,
+            photoURL: firebaseUser.photoURL,
+            avatar:   randomAvatar(),
+            xp:       0,
+            streak:   0,
+            adhdMode: true,
+            lastDate: today(),
+            joinedAt: serverTimestamp(),
           };
           await setDoc(ref, newProfile);
           setProfile(newProfile);
@@ -42,7 +44,7 @@ export function useAuth() {
   }, []);
 
   async function login() {
-    try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
+    try { await signInWithRedirect(auth, provider); } catch (e) { console.error(e); }
   }
 
   async function logout() {
