@@ -101,7 +101,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
   }
 
   const tabs = [
-    ["feed",    "🌍 Global" + (feed.length ? "" : "")],
+    ["feed",    "🌍 Global"],
     ["friends", "👥 Friends" + (pending.length ? ` (${pending.length})` : "")],
     ["invites", "📨 Invites" + (pendingInvites.length ? ` (${pendingInvites.length})` : "")],
   ];
@@ -119,16 +119,55 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
 
       {/* Tabs */}
       <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:2 }}>
-        {tabs.map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            padding:"7px 16px", borderRadius:20, fontSize:12, fontWeight:700, whiteSpace:"nowrap",
-            background: tab===k ? "#6C63FF" : "rgba(255,255,255,0.06)",
-            border: tab===k ? "none" : "1px solid rgba(255,255,255,0.08)",
-            color: tab===k ? "#fff" : "rgba(255,255,255,0.45)", cursor:"pointer",
-            transition:"all 0.15s"
-          }}>{l}</button>
-        ))}
+        {tabs.map(([k, l]) => {
+          const hasBadge = (k === "invites" && pendingInvites.length > 0) || (k === "friends" && pending.length > 0);
+          return (
+            <button key={k} onClick={() => setTab(k)} style={{
+              padding:"7px 16px", borderRadius:20, fontSize:12, fontWeight:700, whiteSpace:"nowrap",
+              background: tab===k ? "#6C63FF" : hasBadge ? "rgba(253,203,110,0.15)" : "rgba(255,255,255,0.06)",
+              border: tab===k ? "none" : hasBadge ? "1px solid rgba(253,203,110,0.4)" : "1px solid rgba(255,255,255,0.08)",
+              color: tab===k ? "#fff" : hasBadge ? "#FDCB6E" : "rgba(255,255,255,0.45)",
+              cursor:"pointer", transition:"all 0.15s"
+            }}>{l}</button>
+          );
+        })}
       </div>
+
+      {/* Pending invites banner — shown on feed tab */}
+      {tab === "feed" && pendingInvites.length > 0 && (
+        <button onClick={() => setTab("invites")} style={{
+          width:"100%", background:"rgba(253,203,110,0.1)", border:"1px solid rgba(253,203,110,0.3)",
+          borderRadius:12, padding:"10px 14px", marginBottom:12, cursor:"pointer",
+          display:"flex", alignItems:"center", gap:10, fontFamily:"inherit", textAlign:"left"
+        }}>
+          <span style={{ fontSize:20 }}>📨</span>
+          <div>
+            <div style={{ fontSize:13, fontWeight:700, color:"#FDCB6E" }}>
+              {pendingInvites.length} task invite{pendingInvites.length > 1 ? "s" : ""} waiting
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>Tap to view and accept</div>
+          </div>
+          <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.3)", fontSize:14 }}>›</span>
+        </button>
+      )}
+
+      {/* Pending friend requests banner — shown on feed tab */}
+      {tab === "feed" && pending.length > 0 && (
+        <button onClick={() => setTab("friends")} style={{
+          width:"100%", background:"rgba(116,185,255,0.08)", border:"1px solid rgba(116,185,255,0.25)",
+          borderRadius:12, padding:"10px 14px", marginBottom:12, cursor:"pointer",
+          display:"flex", alignItems:"center", gap:10, fontFamily:"inherit", textAlign:"left"
+        }}>
+          <span style={{ fontSize:20 }}>👥</span>
+          <div>
+            <div style={{ fontSize:13, fontWeight:700, color:"#74B9FF" }}>
+              {pending.length} friend request{pending.length > 1 ? "s" : ""} pending
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)" }}>Tap to accept</div>
+          </div>
+          <span style={{ marginLeft:"auto", color:"rgba(255,255,255,0.3)", fontSize:14 }}>›</span>
+        </button>
+      )}
 
       {/* ── GLOBAL FEED TAB ── */}
       {tab === "feed" && (

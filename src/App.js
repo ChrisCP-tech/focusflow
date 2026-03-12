@@ -65,6 +65,11 @@ export default function App() {
     setSeeded(true);
     joinRoom(roomId, profile);
     if (habits.length === 0) STARTER_HABITS.forEach(h => addHabit(h));
+    // Post a "joined" feed entry once per session so others can see you're active
+    postToFeed(roomId, {
+      userId: uid, userName: profile.name, userAvatar: profile.avatar,
+      text: `${profile.name} is online 👋`, type: "join"
+    });
   }, [profile, uid]);
 
   useEffect(() => {

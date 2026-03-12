@@ -242,6 +242,11 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
               </div>
             </div>
             <Btn color="#6C63FF" onClick={handleAdd}>Add Task ✅</Btn>
+            {aiXP && (
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", textAlign:"center" }}>
+                💡 After saving, expand the task to use ✨ AI Breakdown and split it into subtasks
+              </div>
+            )}
           </div>
         </Card>
       )}
