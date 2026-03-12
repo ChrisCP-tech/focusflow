@@ -270,6 +270,14 @@ export function useFriends(uid) {
     await setDoc(doc(db, "users", friendUid, "taskInvites", `${myUid}_${task.id}`), {
       fromUid: myUid, taskId: task.id, taskTitle: task.title,
       taskXp: task.xp || 20, taskGold: task.gold || 10,
+      // Store full task snapshot so accept works without reading owner's collection
+      taskSnapshot: {
+        title: task.title, desc: task.desc || "",
+        priority: task.priority || "medium", tag: task.tag || "",
+        xp: task.xp || 20, gold: task.gold || 10,
+        dueTime: task.dueTime || "", isPublic: true,
+        subtasks: task.subtasks || [], progress: task.progress || 0,
+      },
       ts: serverTimestamp(), status: "pending"
     });
   }, []);
@@ -290,17 +298,21 @@ export function useTaskInvites(uid) {
   }, [uid]);
 
   const acceptInvite = useCallback(async (uid, inviteId) => {
-    // Mark invite accepted
-    await updateDoc(doc(db, "users", uid, "taskInvites", inviteId), { status: "accepted" });
-    // Get invite data to create a collab task reference
+    // Get invite data first
     const invSnap = await getDoc(doc(db, "users", uid, "taskInvites", inviteId));
     if (!invSnap.exists()) return;
     const inv = invSnap.data();
-    // Get the owner's original task
-    const taskSnap = await getDoc(doc(db, "users", inv.fromUid, "tasks", inv.taskId));
-    if (!taskSnap.exists()) return;
-    const taskData = taskSnap.data();
-    // Create a collab copy in acceptor's tasks pointing back to owner's task
+
+    // Mark accepted
+    await updateDoc(doc(db, "users", uid, "taskInvites", inviteId), { status: "accepted" });
+
+    // Use stored snapshot (no cross-user read needed)
+    const taskData = inv.taskSnapshot || {
+      title: inv.taskTitle, xp: inv.taskXp || 20, gold: inv.taskGold || 10,
+      priority: "medium", isPublic: true, subtasks: [], progress: 0,
+    };
+
+    // Create collab copy in acceptor's tasks
     await setDoc(doc(db, "users", uid, "tasks", `collab_${inv.fromUid}_${inv.taskId}`), {
       ...taskData,
       id: `collab_${inv.fromUid}_${inv.taskId}`,
