@@ -267,8 +267,8 @@ export default function App() {
           <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit}
             deleteHabit={deleteHabit} toggleHabitPrivacy={toggleHabitPrivacy} />
         )}
-        {page === "focus"   && <FocusPage onComplete={handleFocusComplete} profile={profile} />}
-        {page === "squads"  && <SquadsPage profile={profile} uid={uid} />}
+        {page === "focus"   && <FocusPage onComplete={handleFocusComplete} profile={profile} uid={uid} />}
+        {page === "squads"  && <SquadsPage profile={{ ...profile, uid }} uid={uid} />}
         {page === "social"  && (
           <SocialPage
             feed={feed} members={members} profile={profile} roomId={roomId}

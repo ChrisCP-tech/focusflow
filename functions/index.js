@@ -11,9 +11,9 @@ exports.claudeProxy = functions.https.onRequest((req, res) => {
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "POST")    { res.status(405).send("Method Not Allowed"); return; }
 
-  const ANTHROPIC_API_KEY = functions.config().anthropic?.key;
+  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_KEY;
   if (!ANTHROPIC_API_KEY) {
-    res.status(500).json({ error: "API key not configured. Run: firebase functions:config:set anthropic.key=YOUR_KEY" });
+    res.status(500).json({ error: "API key not configured. Add ANTHROPIC_KEY to functions/.env" });
     return;
   }
 

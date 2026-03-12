@@ -5,64 +5,296 @@ import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars,
 import { fetchUserProfile } from "../hooks/useData";
 
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
-export function FocusPage({ onComplete, profile }) {
+export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
+  const [mode,     setMode]     = useState("solo");   // "solo" | "group"
   const [selected, setSelected] = useState(1500);
   const [left,     setLeft]     = useState(1500);
   const [running,  setRunning]  = useState(false);
   const [done,     setDone]     = useState(false);
 
+  // Group focus state
+  const [sessionId,    setSessionId]    = useState(null);
+  const [joinCode,     setJoinCode]     = useState("");
+  const [groupSession, setGroupSession] = useState(null);
+  const [participants, setParticipants] = useState([]);
+  const [chatMsg,      setChatMsg]      = useState("");
+  const [messages,     setMessages]     = useState([]);
+  const [groupError,   setGroupError]   = useState(null);
+
+  // Solo timer
   useEffect(() => {
-    if (!running) return;
+    if (!running || mode === "group") return;
     const t = setInterval(() => setLeft(l => {
       if (l <= 1) { setRunning(false); setDone(true); clearInterval(t); return 0; }
       return l - 1;
     }), 1000);
     return () => clearInterval(t);
-  }, [running]);
+  }, [running, mode]);
+
+  // Group session listener
+  useEffect(() => {
+    if (!sessionId) return;
+    const { db } = require("../firebase/config");
+    const { doc, onSnapshot, collection } = require("firebase/firestore");
+    const unsubSession = onSnapshot(doc(db, "pomodoroSessions", sessionId), snap => {
+      if (snap.exists()) setGroupSession(snap.data());
+    });
+    const unsubParts = onSnapshot(collection(db, "pomodoroSessions", sessionId, "participants"), snap => {
+      setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsubMsgs = onSnapshot(collection(db, "pomodoroSessions", sessionId, "messages"), snap => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.ts?.seconds||0)-(b.ts?.seconds||0)));
+    });
+    return () => { unsubSession(); unsubParts(); unsubMsgs(); };
+  }, [sessionId]);
+
+  // Group timer sync
+  useEffect(() => {
+    if (!groupSession || !running) return;
+    const endTime = groupSession.endTime?.toMillis?.() || 0;
+    const tick = setInterval(() => {
+      const remaining = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+      setLeft(remaining);
+      if (remaining === 0) { setRunning(false); setDone(true); clearInterval(tick); }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [groupSession, running]);
 
   function pick(s) { if (!running) { setSelected(s); setLeft(s); setDone(false); } }
   function reset()  { setRunning(false); setLeft(selected); setDone(false); }
 
+  async function createGroupSession() {
+    try {
+      const { db } = await import("../firebase/config");
+      const { addDoc, collection, setDoc, doc, serverTimestamp, Timestamp } = await import("firebase/firestore");
+      const code = Math.random().toString(36).slice(2, 7).toUpperCase();
+      const ref = await addDoc(collection(db, "pomodoroSessions"), {
+        code, hostUid: uid, duration: selected,
+        status: "waiting", createdAt: serverTimestamp()
+      });
+      await setDoc(doc(db, "pomodoroSessions", ref.id, "participants", uid), {
+        uid, name: profile?.name || "You", avatar: profile?.avatar || "🦊",
+        joinedAt: serverTimestamp()
+      });
+      setSessionId(ref.id);
+      setGroupError(null);
+    } catch(e) { setGroupError("Failed to create session: " + e.message); }
+  }
+
+  async function joinGroupSession() {
+    if (!joinCode.trim()) return;
+    try {
+      const { db } = await import("../firebase/config");
+      const { collection, getDocs, query, where, setDoc, doc, serverTimestamp } = await import("firebase/firestore");
+      const snap = await getDocs(query(collection(db, "pomodoroSessions"), where("code", "==", joinCode.trim().toUpperCase())));
+      if (snap.empty) { setGroupError("Session not found — check the code"); return; }
+      const sessionDoc = snap.docs[0];
+      await setDoc(doc(db, "pomodoroSessions", sessionDoc.id, "participants", uid), {
+        uid, name: profile?.name || "You", avatar: profile?.avatar || "🦊",
+        joinedAt: serverTimestamp()
+      });
+      setSessionId(sessionDoc.id);
+      setGroupError(null);
+    } catch(e) { setGroupError("Failed to join: " + e.message); }
+  }
+
+  async function startGroupTimer() {
+    try {
+      const { db } = await import("../firebase/config");
+      const { updateDoc, doc, Timestamp } = await import("firebase/firestore");
+      const endTime = new Date(Date.now() + selected * 1000);
+      await updateDoc(doc(db, "pomodoroSessions", sessionId), {
+        status: "running", endTime: Timestamp.fromDate(endTime), duration: selected
+      });
+      setLeft(selected);
+      setRunning(true);
+      setDone(false);
+    } catch(e) { setGroupError("Failed to start: " + e.message); }
+  }
+
+  async function sendChat() {
+    if (!chatMsg.trim() || !sessionId) return;
+    const { db } = await import("../firebase/config");
+    const { addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+    await addDoc(collection(db, "pomodoroSessions", sessionId, "messages"), {
+      uid, name: profile?.name || "You", avatar: profile?.avatar || "🦊",
+      text: chatMsg.trim(), ts: serverTimestamp()
+    });
+    setChatMsg("");
+  }
+
+  async function leaveGroup() {
+    if (!sessionId) return;
+    const { db } = await import("../firebase/config");
+    const { deleteDoc, doc } = await import("firebase/firestore");
+    await deleteDoc(doc(db, "pomodoroSessions", sessionId, "participants", uid)).catch(()=>{});
+    setSessionId(null); setGroupSession(null); setParticipants([]);
+    setMessages([]); setRunning(false); setDone(false); setLeft(selected);
+  }
+
   const mins = String(Math.floor(left/60)).padStart(2,"0");
   const secs = String(left%60).padStart(2,"0");
   const pct  = ((selected - left) / selected) * 100;
+  const isHost = groupSession?.hostUid === uid;
 
   return (
     <div className="fadeUp" style={{ display:"flex", flexDirection:"column", alignItems:"center", paddingTop:20 }}>
-      <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:24 }}>Focus Mode ⏱</h2>
-      <div style={{ display:"flex", gap:8, marginBottom:32 }}>
-        {PRESETS.map(p => (
-          <button key={p.s} onClick={() => pick(p.s)} style={{
-            padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:600, cursor:"pointer", border:"none",
-            background:selected===p.s?"#6C63FF":"rgba(255,255,255,0.07)",
-            color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
-          }}>{p.label}</button>
-        ))}
-      </div>
+      <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:16 }}>Focus Mode ⏱</h2>
 
-      <div style={{ position:"relative", width:200, height:200, marginBottom:32 }}>
-        <svg width="200" height="200" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
-          <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
-          <circle cx="100" cy="100" r="90" fill="none" stroke="#6C63FF" strokeWidth="8"
-            strokeDasharray={`${2*Math.PI*90}`} strokeDashoffset={`${2*Math.PI*90*(1-pct/100)}`}
-            strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
-        </svg>
-        <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:42 }}>{mins}:{secs}</div>
-          <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{running ? "focusing…" : done ? "done! 🎉" : "ready"}</div>
+      {/* Mode toggle */}
+      {!sessionId && (
+        <div style={{ display:"flex", gap:6, marginBottom:24, background:"rgba(255,255,255,0.04)", borderRadius:20, padding:4 }}>
+          {[["solo","🎧 Solo"],["group","👥 Group"]].map(([m,l]) => (
+            <button key={m} onClick={() => setMode(m)} style={{
+              padding:"7px 20px", borderRadius:16, fontSize:13, fontWeight:700, border:"none", cursor:"pointer",
+              background: mode===m ? "#6C63FF" : "transparent",
+              color: mode===m ? "#fff" : "rgba(255,255,255,0.4)"
+            }}>{l}</button>
+          ))}
         </div>
-      </div>
+      )}
 
-      {done ? (
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:16, fontWeight:700, color:"#55EFC4", marginBottom:12 }}>Session complete! +40XP +20🪙</div>
-          <Btn color="#6C63FF" onClick={() => { onComplete(); reset(); }}>Claim Reward 🎉</Btn>
+      {/* ── SOLO MODE ── */}
+      {mode === "solo" && !sessionId && (
+        <>
+          <div style={{ display:"flex", gap:8, marginBottom:32 }}>
+            {PRESETS.map(p => (
+              <button key={p.s} onClick={() => pick(p.s)} style={{
+                padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:600, cursor:"pointer", border:"none",
+                background:selected===p.s?"#6C63FF":"rgba(255,255,255,0.07)",
+                color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
+              }}>{p.label}</button>
+            ))}
+          </div>
+          <div style={{ position:"relative", width:200, height:200, marginBottom:32 }}>
+            <svg width="200" height="200" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
+              <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+              <circle cx="100" cy="100" r="90" fill="none" stroke="#6C63FF" strokeWidth="8"
+                strokeDasharray={`${2*Math.PI*90}`} strokeDashoffset={`${2*Math.PI*90*(1-pct/100)}`}
+                strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
+            </svg>
+            <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:42 }}>{mins}:{secs}</div>
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{running ? "focusing…" : done ? "done! 🎉" : "ready"}</div>
+            </div>
+          </div>
+          {done ? (
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:16, fontWeight:700, color:"#55EFC4", marginBottom:12 }}>Session complete! +40XP +20🪙</div>
+              <Btn color="#6C63FF" onClick={() => { onComplete(); reset(); }}>Claim Reward 🎉</Btn>
+            </div>
+          ) : (
+            <div style={{ display:"flex", gap:10 }}>
+              <Btn color="#6C63FF" onClick={() => setRunning(v=>!v)}>{running?"⏸ Pause":"▶ Start"}</Btn>
+              {(running || left !== selected) && <Btn ghost color="#6C63FF" onClick={reset}>↺ Reset</Btn>}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── GROUP MODE — lobby ── */}
+      {mode === "group" && !sessionId && (
+        <div style={{ width:"100%", maxWidth:360 }}>
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            {PRESETS.map(p => (
+              <button key={p.s} onClick={() => pick(p.s)} style={{
+                flex:1, padding:"8px 0", borderRadius:12, fontSize:12, fontWeight:600, cursor:"pointer", border:"none",
+                background:selected===p.s?"#6C63FF":"rgba(255,255,255,0.07)",
+                color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
+              }}>{p.label}</button>
+            ))}
+          </div>
+          <Btn color="#6C63FF" style={{ width:"100%", marginBottom:12 }} onClick={createGroupSession}>
+            ✨ Create Group Session
+          </Btn>
+          <div style={{ textAlign:"center", fontSize:12, color:"rgba(255,255,255,0.3)", marginBottom:12 }}>— or join existing —</div>
+          <div style={{ display:"flex", gap:8 }}>
+            <Input value={joinCode} onChange={setJoinCode}
+              onKeyDown={e => e.key==="Enter" && joinGroupSession()}
+              placeholder="Enter 5-letter code…"
+              style={{ flex:1, textTransform:"uppercase", letterSpacing:"0.1em" }} />
+            <Btn color="#55EFC4" style={{ color:"#0B0D17" }} onClick={joinGroupSession}>Join</Btn>
+          </div>
+          {groupError && <div style={{ fontSize:12, color:"#FF6B6B", marginTop:8, textAlign:"center" }}>{groupError}</div>}
         </div>
-      ) : (
-        <div style={{ display:"flex", gap:10 }}>
-          <Btn color="#6C63FF" onClick={() => setRunning(v=>!v)}>{running?"⏸ Pause":"▶ Start"}</Btn>
-          {(running || left !== selected) && <Btn ghost color="#6C63FF" onClick={reset}>↺ Reset</Btn>}
+      )}
+
+      {/* ── GROUP MODE — active session ── */}
+      {sessionId && (
+        <div style={{ width:"100%", maxWidth:400 }}>
+          {/* Session code */}
+          <div style={{ textAlign:"center", marginBottom:20 }}>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginBottom:4 }}>SESSION CODE</div>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:28, letterSpacing:"0.15em", color:"#FDCB6E" }}>
+              {groupSession?.code || "…"}
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginTop:2 }}>Share this with friends</div>
+          </div>
+
+          {/* Timer */}
+          <div style={{ position:"relative", width:160, height:160, margin:"0 auto 20px" }}>
+            <svg width="160" height="160" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
+              <circle cx="80" cy="80" r="70" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7" />
+              <circle cx="80" cy="80" r="70" fill="none" stroke={done?"#55EFC4":"#6C63FF"} strokeWidth="7"
+                strokeDasharray={`${2*Math.PI*70}`} strokeDashoffset={`${2*Math.PI*70*(1-pct/100)}`}
+                strokeLinecap="round" style={{ transition:"stroke-dashoffset 0.8s ease" }} />
+            </svg>
+            <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:34 }}>{mins}:{secs}</div>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>
+                {groupSession?.status === "waiting" ? "waiting…" : running ? "focusing…" : done ? "done! 🎉" : "paused"}
+              </div>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div style={{ display:"flex", gap:8, justifyContent:"center", marginBottom:16 }}>
+            {isHost && groupSession?.status === "waiting" && (
+              <Btn color="#6C63FF" onClick={startGroupTimer}>▶ Start for Everyone</Btn>
+            )}
+            {done && isHost && (
+              <Btn color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => { onComplete(); leaveGroup(); }}>
+                Claim +40XP 🎉
+              </Btn>
+            )}
+            <Btn ghost color="#FF6B6B" onClick={leaveGroup}>Leave</Btn>
+          </div>
+
+          {/* Participants */}
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.3)", letterSpacing:"0.06em", marginBottom:8 }}>
+              PARTICIPANTS ({participants.length})
+            </div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {participants.map(p => (
+                <div key={p.id} style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(255,255,255,0.05)", borderRadius:20, padding:"4px 10px 4px 6px" }}>
+                  <span style={{ fontSize:20 }}>{p.avatar}</span>
+                  <span style={{ fontSize:12, fontWeight:600 }}>{p.uid === uid ? "You" : p.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat */}
+          <div style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:12, padding:10 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.3)", letterSpacing:"0.06em", marginBottom:8 }}>CHAT</div>
+            <div style={{ maxHeight:120, overflowY:"auto", marginBottom:8 }}>
+              {messages.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", textAlign:"center", padding:"8px 0" }}>No messages yet…</div>}
+              {messages.map(m => (
+                <div key={m.id} style={{ fontSize:12, marginBottom:6 }}>
+                  <span style={{ fontWeight:700, color: m.uid===uid?"#A29BFE":"#74B9FF" }}>{m.uid===uid?"You":m.name}: </span>
+                  <span style={{ color:"rgba(255,255,255,0.7)" }}>{m.text}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              <Input value={chatMsg} onChange={setChatMsg}
+                onKeyDown={e => e.key==="Enter" && sendChat()}
+                placeholder="Say something…" style={{ flex:1, fontSize:12, padding:"6px 10px" }} />
+              <Btn small color="#6C63FF" onClick={sendChat}>↑</Btn>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -241,32 +473,55 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
       {/* ── FRIENDS TAB ── */}
       {tab === "friends" && (
         <>
+          {/* Add friend input */}
           <Card style={{ marginBottom:14 }}>
             <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>ADD FRIEND BY USER ID</div>
             <div style={{ display:"flex", gap:8 }}>
               <Input value={targetUid} onChange={setTargetUid} placeholder="Paste their User ID…"
                 onKeyDown={e => e.key==="Enter" && handleSendRequest()}
                 style={{ flex:1, fontSize:12 }} />
-              <Btn small color="#6C63FF" onClick={handleSendRequest} disabled={reqStatus==="loading"}>Add</Btn>
+              <Btn small color="#6C63FF" onClick={handleSendRequest} disabled={reqStatus==="loading"}>
+                {reqStatus==="loading" ? "…" : "Add"}
+              </Btn>
             </div>
             {reqStatus?.startsWith("error:") && <div style={{ fontSize:11, color:"#FF6B6B", marginTop:6 }}>{reqStatus.replace("error:","")}</div>}
             {reqStatus==="sent" && <div style={{ fontSize:11, color:"#55EFC4", marginTop:6 }}>Request sent! ✓</div>}
           </Card>
 
-          {pending.length > 0 && (
+          {/* Outgoing pending — requests YOU sent waiting on them */}
+          {(friends||[]).filter(f => f.status==="pending" && f.direction==="outgoing").length > 0 && (
             <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:"#FDCB6E", marginBottom:8, letterSpacing:"0.05em" }}>PENDING REQUESTS</div>
-              {pending.map(f => (
-                <Card key={f.uid} style={{ marginBottom:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>SENT — WAITING FOR REPLY</div>
+              {(friends||[]).filter(f => f.status==="pending" && f.direction==="outgoing").map(f => (
+                <Card key={f.uid} style={{ marginBottom:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ fontSize:28 }}>{f.avatar}</div>
+                    <div style={{ width:38, height:38, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{f.avatar}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
-                      <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>wants to be friends</div>
+                      <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>⏳ Pending their acceptance</div>
+                    </div>
+                    <Btn small ghost color="#FF6B6B" onClick={() => removeFriend(uid, f.uid)}>Cancel</Btn>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Incoming pending — requests THEY sent to you */}
+          {pending.length > 0 && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"#FDCB6E", marginBottom:8, letterSpacing:"0.05em" }}>FRIEND REQUESTS</div>
+              {pending.map(f => (
+                <Card key={f.uid} style={{ marginBottom:8, background:"rgba(253,203,110,0.05)", border:"1px solid rgba(253,203,110,0.15)" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ width:38, height:38, borderRadius:"50%", background:"linear-gradient(135deg,#FDCB6E,#E17055)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{f.avatar}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
+                      <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>wants to be friends 👋</div>
                     </div>
                     <div style={{ display:"flex", gap:6 }}>
                       <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => acceptFriend(uid, f.uid)}>Accept</Btn>
-                      <Btn small ghost color="#FF6B6B" onClick={() => removeFriend(uid, f.uid)}>Decline</Btn>
+                      <Btn small ghost color="#FF6B6B" onClick={() => removeFriend(uid, f.uid)}>✕</Btn>
                     </div>
                   </div>
                 </Card>
@@ -274,7 +529,8 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
             </div>
           )}
 
-          {accepted.length === 0 && pending.length === 0 && (
+          {/* Empty state */}
+          {accepted.length === 0 && pending.length === 0 && (friends||[]).filter(f=>f.direction==="outgoing").length === 0 && (
             <div style={{ textAlign:"center", padding:"48px 0", color:"rgba(255,255,255,0.2)" }}>
               <div style={{ fontSize:40, marginBottom:8 }}>👥</div>
               <div>No friends yet</div>
@@ -282,13 +538,21 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
             </div>
           )}
 
-          {accepted.map(f => (
-            <FriendCard key={f.uid} friend={f} uid={uid} profile={profile}
-              onRemove={() => removeFriend(uid, f.uid)}
-              onViewProfile={() => onViewProfile(f.uid)}
-              onGift={(amount) => giftGold(profile, f.uid, amount, updateProfile)}
-            />
-          ))}
+          {/* Accepted friends — rich progress cards */}
+          {accepted.length > 0 && (
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:10, letterSpacing:"0.05em" }}>
+                FRIENDS ({accepted.length})
+              </div>
+              {accepted.map(f => (
+                <FriendCard key={f.uid} friend={f} uid={uid} profile={profile}
+                  onRemove={() => removeFriend(uid, f.uid)}
+                  onViewProfile={() => onViewProfile(f.uid)}
+                  onGift={(amount) => giftGold(profile, f.uid, amount, updateProfile)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -305,94 +569,198 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
   const [showGift,     setShowGift]     = useState(false);
   const [giftAmt,      setGiftAmt]      = useState(10);
   const [giftStatus,   setGiftStatus]   = useState(null);
-  const [showTasks,    setShowTasks]    = useState(false);
+  const [expanded,     setExpanded]     = useState(false);
   const [tasks,        setTasks]        = useState([]);
+  const [friendData,   setFriendData]   = useState(null);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError,   setTasksError]   = useState(null);
 
-  // Live subscription to friend's public tasks — only when panel is open
+  // Load friend's full profile + public tasks when expanded
   useEffect(() => {
-    if (!showTasks) return;
+    if (!expanded) return;
     setTasksLoading(true);
     setTasksError(null);
-    let unsub;
     Promise.all([
       import("firebase/firestore"),
       import("../firebase/config")
-    ]).then(([{ collection, query, where, limit, onSnapshot }, { db }]) => {
-      unsub = onSnapshot(
+    ]).then(([{ collection, query, where, limit, onSnapshot, getDoc, doc }, { db }]) => {
+      // Load profile for XP/streak/level
+      getDoc(doc(db, "users", f.uid)).then(snap => {
+        if (snap.exists()) setFriendData(snap.data());
+      }).catch(() => {});
+
+      // Live public tasks
+      const unsub = onSnapshot(
         query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
         snap => {
           const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+          list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
           setTasks(list);
           setTasksLoading(false);
         },
         err => {
-          console.error("friend tasks:", err);
-          setTasksError("Could not load tasks — check Firestore rules");
+          setTasksError("Could not load — check Firestore rules");
           setTasksLoading(false);
         }
       );
-    });
-    return () => unsub?.();
-  }, [showTasks, f.uid]);
+      return unsub;
+    }).then(unsub => { if (typeof unsub === "function") return unsub; });
+  }, [expanded, f.uid]);
 
   async function sendGift() {
     const res = await onGift(giftAmt);
     setGiftStatus(res?.error ? `error:${res.error}` : "sent");
   }
 
+  const activeTasks = tasks.filter(t => !t.done);
+  const doneTasks   = tasks.filter(t => t.done);
+  const level       = friendData ? getLevel(friendData.xp || 0) : null;
+  const xpPct       = friendData ? xpProgress(friendData.xp || 0) : 0;
+  const streak      = friendData?.streak || f.streak || 0;
+
   return (
-    <Card style={{ marginBottom:10 }}>
+    <Card style={{ marginBottom:10, border: expanded ? "1px solid rgba(108,99,255,0.3)" : undefined }}>
+      {/* Header row */}
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-        <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0 }}>
-          <div style={{ width:42, height:42, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24 }}>{f.avatar}</div>
+        <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0, flexShrink:0 }}>
+          <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, border:"2px solid rgba(108,99,255,0.4)" }}>{f.avatar}</div>
         </button>
-        <div style={{ flex:1, cursor:"pointer" }} onClick={onViewProfile}>
-          <div style={{ fontWeight:600, fontSize:14 }}>{f.name}</div>
-          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Tap name to view profile</div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontWeight:700, fontSize:14, cursor:"pointer" }} onClick={onViewProfile}>{f.name}</span>
+            {streak > 0 && <span style={{ fontSize:11, color:"#FF6B6B", fontWeight:700 }}>🔥{streak}</span>}
+          </div>
+          {level && (
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>
+              Lv.{level} · {friendData?.xp||0} XP
+            </div>
+          )}
         </div>
-      </div>
-      <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
-        <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift</Btn>
-        <Btn small ghost color="#6C63FF" onClick={() => setShowTasks(v=>!v)}>{showTasks ? "Hide Tasks" : "📋 Tasks"}</Btn>
-        <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove</Btn>
+        <button onClick={() => setExpanded(v=>!v)} style={{
+          background: expanded ? "rgba(108,99,255,0.2)" : "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(255,255,255,0.08)", borderRadius:10,
+          color:"rgba(255,255,255,0.6)", fontSize:12, fontWeight:600,
+          cursor:"pointer", padding:"5px 10px", fontFamily:"inherit", flexShrink:0
+        }}>
+          {expanded ? "▲ Hide" : "👀 Check Up"}
+        </button>
       </div>
 
-      {showGift && (
-        <div style={{ marginTop:10, display:"flex", gap:8, alignItems:"center" }}>
-          <select value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"6px 8px", color:"#E8E9F3", fontSize:12, fontFamily:"inherit" }}>
-            {[5,10,25,50,100].map(a => <option key={a} value={a}>{a}🪙</option>)}
-          </select>
-          <Btn small color="#FDCB6E" style={{ color:"#0B0D17" }} onClick={sendGift}>Send Gift</Btn>
-          {giftStatus==="sent" && <span style={{ fontSize:11, color:"#55EFC4" }}>Sent! 🎁</span>}
-          {giftStatus?.startsWith("error:") && <span style={{ fontSize:11, color:"#FF6B6B" }}>{giftStatus.replace("error:","")}</span>}
-        </div>
-      )}
+      {/* Expanded progress view */}
+      {expanded && (
+        <div style={{ marginTop:14, paddingTop:14, borderTop:"1px solid rgba(255,255,255,0.06)" }}>
 
-      {showTasks && (
-        <div style={{ marginTop:12, borderTop:"1px solid rgba(255,255,255,0.06)", paddingTop:10 }}>
-          <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>PUBLIC TASKS</div>
-          {tasksLoading && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>Loading…</div>}
-          {tasksError && <div style={{ fontSize:11, color:"#FF6B6B" }}>{tasksError}</div>}
-          {!tasksLoading && !tasksError && tasks.length === 0 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>No public tasks yet</div>}
-          {tasks.map(t => (
-            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
-              <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${t.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:t.done?"#55EFC4":"transparent", flexShrink:0 }} />
-              <span style={{ fontSize:13, flex:1, textDecoration:t.done?"line-through":"none", color:t.done?"rgba(255,255,255,0.4)":"#E8E9F3" }}>{t.title}</span>
-              <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-                <span style={{ fontSize:10, color:"#FDCB6E" }}>+{t.xp||20}XP</span>
-                <span style={{ fontSize:10, color:"#FDCB6E" }}>+{t.gold||10}🪙</span>
+          {/* XP progress bar */}
+          {friendData && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>
+                <span>Level {level} progress</span>
+                <span>{xpPct}%</span>
+              </div>
+              <div style={{ height:6, background:"rgba(255,255,255,0.06)", borderRadius:3, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${xpPct}%`, background:"linear-gradient(90deg,#6C63FF,#A29BFE)", borderRadius:3, transition:"width 0.5s" }} />
+              </div>
+              <div style={{ display:"flex", gap:14, marginTop:8 }}>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:800, color:"#FDCB6E" }}>{friendData.xp||0}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>XP</div>
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:800, color:"#FF6B6B" }}>🔥{streak}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Streak</div>
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:800, color:"#55EFC4" }}>{doneTasks.length}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Done</div>
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:16, fontWeight:800, color:"#74B9FF" }}>{activeTasks.length}</div>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Active</div>
+                </div>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Active public tasks */}
+          <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>
+            ACTIVE TASKS
+          </div>
+          {tasksLoading && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", padding:"8px 0" }}>Loading…</div>}
+          {tasksError  && <div style={{ fontSize:11, color:"#FF6B6B" }}>{tasksError}</div>}
+          {!tasksLoading && !tasksError && activeTasks.length === 0 && (
+            <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", padding:"8px 0" }}>No active public tasks</div>
+          )}
+          {activeTasks.map(t => {
+            const subtasks  = t.subtasks || [];
+            const subDone   = subtasks.filter(s=>s.done).length;
+            const subPct    = subtasks.length ? Math.round(subDone/subtasks.length*100) : 0;
+            const priorityColor = { high:"#FF6B6B", medium:"#FDCB6E", low:"#55EFC4" }[t.priority] || "#6C63FF";
+            return (
+              <div key={t.id} style={{ marginBottom:10, background:"rgba(255,255,255,0.03)", borderRadius:10, padding:"10px 12px", borderLeft:`3px solid ${priorityColor}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:"#E8E9F3", marginBottom:2 }}>{t.title}</div>
+                    {t.desc && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginBottom:4 }}>{t.desc}</div>}
+                    {subtasks.length > 0 && (
+                      <div style={{ marginTop:6 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.3)", marginBottom:3 }}>
+                          <span>{subDone}/{subtasks.length} subtasks</span>
+                          <span>{subPct}%</span>
+                        </div>
+                        <div style={{ height:4, background:"rgba(255,255,255,0.06)", borderRadius:2, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:`${subPct}%`, background:"linear-gradient(90deg,#6C63FF,#55EFC4)", borderRadius:2 }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:2, flexShrink:0 }}>
+                    <span style={{ fontSize:10, color:"#FDCB6E", fontWeight:700 }}>+{t.xp||20}XP</span>
+                    {t.dueTime && <span style={{ fontSize:10, color:"#74B9FF" }}>⏰{t.dueTime}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Recently completed */}
+          {doneTasks.length > 0 && (
+            <>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, marginTop:4, letterSpacing:"0.05em" }}>
+                RECENTLY COMPLETED
+              </div>
+              {doneTasks.slice(0,3).map(t => (
+                <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ width:16, height:16, borderRadius:4, background:"#55EFC4", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <span style={{ color:"#0B0D17", fontSize:10, fontWeight:900 }}>✓</span>
+                  </div>
+                  <span style={{ fontSize:12, flex:1, textDecoration:"line-through", color:"rgba(255,255,255,0.35)" }}>{t.title}</span>
+                  <span style={{ fontSize:10, color:"#55EFC4" }}>+{t.xp||20}XP</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Gift + actions */}
+          <div style={{ display:"flex", gap:6, marginTop:12, flexWrap:"wrap" }}>
+            <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift Gold</Btn>
+            <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove Friend</Btn>
+          </div>
+
+          {showGift && (
+            <div style={{ marginTop:10, display:"flex", gap:8, alignItems:"center" }}>
+              <select value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"6px 8px", color:"#E8E9F3", fontSize:12, fontFamily:"inherit" }}>
+                {[5,10,25,50,100].map(a => <option key={a} value={a}>{a}🪙</option>)}
+              </select>
+              <Btn small color="#FDCB6E" style={{ color:"#0B0D17" }} onClick={sendGift}>Send</Btn>
+              {giftStatus==="sent" && <span style={{ fontSize:11, color:"#55EFC4" }}>Sent! 🎁</span>}
+              {giftStatus?.startsWith("error:") && <span style={{ fontSize:11, color:"#FF6B6B" }}>{giftStatus.replace("error:","")}</span>}
+            </div>
+          )}
         </div>
       )}
     </Card>
   );
 }
-
 function TaskInvitesTab({ invites, onAccept, onDecline }) {
   if (invites.length === 0) return (
     <div style={{ textAlign:"center", padding:"36px 0", color:"rgba(255,255,255,0.2)" }}>

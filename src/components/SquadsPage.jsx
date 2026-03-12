@@ -30,15 +30,15 @@ export function SquadsPage({ profile, uid }) {
 
   async function handleCreate() {
     if (!newSquadName.trim()) return;
+    setCreateError(null);
     if (!unlocks.canCreateSquad) {
-      setCreateError("Squad creation unlocks at Level 5. Keep earning XP!");
+      setCreateError("Squad creation not available at your level.");
       return;
     }
     if (squads.length >= unlocks.maxSquads) {
-      setCreateError(`You've reached your squad limit (${unlocks.maxSquads}). Level up to unlock more squad slots!`);
+      setCreateError(`You've reached your squad limit (${unlocks.maxSquads}). Level up to unlock more!`);
       return;
     }
-    setCreateError(null);
     const id = await createSquad(profile, newSquadName.trim(), newSquadEmoji);
     if (!id) { setCreateError("Failed to create squad. Check console for errors."); return; }
     setActiveSquadId(id);
