@@ -35,18 +35,22 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   // Group session listener
   useEffect(() => {
     if (!sessionId) return;
-    const { db } = require("../firebase/config");
-    const { doc, onSnapshot, collection } = require("firebase/firestore");
-    const unsubSession = onSnapshot(doc(db, "pomodoroSessions", sessionId), snap => {
-      if (snap.exists()) setGroupSession(snap.data());
+    import("../firebase/config").then(({ db }) => {
+      import("firebase/firestore").then(({ doc, onSnapshot, collection }) => {
+        const unsubSession = onSnapshot(doc(db, "pomodoroSessions", sessionId), snap => {
+          if (snap.exists()) setGroupSession(snap.data());
+        });
+        const unsubParts = onSnapshot(collection(db, "pomodoroSessions", sessionId, "participants"), snap => {
+          setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        const unsubMsgs = onSnapshot(collection(db, "pomodoroSessions", sessionId, "messages"), snap => {
+          setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.ts?.seconds||0)-(b.ts?.seconds||0)));
+        });
+        // Store unsubs for cleanup
+        window._focusUnsubs = [unsubSession, unsubParts, unsubMsgs];
+      });
     });
-    const unsubParts = onSnapshot(collection(db, "pomodoroSessions", sessionId, "participants"), snap => {
-      setParticipants(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsubMsgs = onSnapshot(collection(db, "pomodoroSessions", sessionId, "messages"), snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.ts?.seconds||0)-(b.ts?.seconds||0)));
-    });
-    return () => { unsubSession(); unsubParts(); unsubMsgs(); };
+    return () => { (window._focusUnsubs||[]).forEach(u => u()); window._focusUnsubs = []; };
   }, [sessionId]);
 
   // Group timer sync
