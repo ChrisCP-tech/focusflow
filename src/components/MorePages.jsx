@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
 import { fetchUserProfile } from "../hooks/useData";
+import { collection, query, where, limit, onSnapshot, getDoc, doc } from "firebase/firestore";
+import { db } from "../firebase/config";
 
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 export function FocusPage({ onComplete, profile, uid, roomMembers }) {
@@ -584,31 +586,27 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
     if (!expanded) return;
     setTasksLoading(true);
     setTasksError(null);
-    Promise.all([
-      import("firebase/firestore"),
-      import("../firebase/config")
-    ]).then(([{ collection, query, where, limit, onSnapshot, getDoc, doc }, { db }]) => {
-      // Load profile for XP/streak/level
-      getDoc(doc(db, "users", f.uid)).then(snap => {
-        if (snap.exists()) setFriendData(snap.data());
-      }).catch(() => {});
 
-      // Live public tasks
-      const unsub = onSnapshot(
-        query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
-        snap => {
-          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-          setTasks(list);
-          setTasksLoading(false);
-        },
-        err => {
-          setTasksError("Could not load — check Firestore rules");
-          setTasksLoading(false);
-        }
-      );
-      return unsub;
-    }).then(unsub => { if (typeof unsub === "function") return unsub; });
+    // Load profile for XP/streak/level
+    getDoc(doc(db, "users", f.uid)).then(snap => {
+      if (snap.exists()) setFriendData(snap.data());
+    }).catch(() => {});
+
+    // Live public tasks
+    const unsub = onSnapshot(
+      query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
+      snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+        setTasks(list);
+        setTasksLoading(false);
+      },
+      err => {
+        setTasksError("Could not load tasks");
+        setTasksLoading(false);
+      }
+    );
+    return () => unsub();
   }, [expanded, f.uid]);
 
   async function sendGift() {
@@ -1218,36 +1216,27 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
     fetchUserProfile(targetUid).then(p => { setTargetProfile(p); setLoading(false); });
 
     // Live public tasks
-    let unsubTasks;
-    import("firebase/firestore").then(({ collection, query, where, onSnapshot, limit }) => {
-      import("../firebase/config").then(({ db }) => {
-        unsubTasks = onSnapshot(
-          query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), limit(15)),
-          snap => {
-            const list = snap.docs.map(d=>({id:d.id,...d.data()}));
-            list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-            setTasks(list);
-          }
-        );
-      });
-    });
-    return () => { unsubTasks?.(); };
+    const unsubTasks = onSnapshot(
+      query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), limit(15)),
+      snap => {
+        const list = snap.docs.map(d=>({id:d.id,...d.data()}));
+        list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+        setTasks(list);
+      },
+      () => {}
+    );
+    return () => unsubTasks();
   }, [targetUid]);
 
   // Habits in a separate effect so it loads independently of isFriend timing
   useEffect(() => {
     if (!targetUid) return;
-    let unsubHabits;
-    import("firebase/firestore").then(({ collection, query, where, onSnapshot, limit }) => {
-      import("../firebase/config").then(({ db }) => {
-        unsubHabits = onSnapshot(
-          query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
-          snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()}))),
-          () => setHabits([])
-        );
-      });
-    });
-    return () => { unsubHabits?.(); };
+    const unsubHabits = onSnapshot(
+      query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
+      snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()}))),
+      () => setHabits([])
+    );
+    return () => unsubHabits();
   }, [targetUid]);
 
   if (loading || !targetProfile) return (
