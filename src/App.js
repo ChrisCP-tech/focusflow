@@ -1,7 +1,5 @@
 // src/App.js
 import { useState, useEffect, useCallback } from "react";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "./firebase/config";
 import { useAuth }         from "./hooks/useAuth";
 import { useTasks, useHabits, useFeed, useSquadMembers, useMoodLog } from "./hooks/useData";
 import LoginScreen         from "./components/LoginScreen";
@@ -10,6 +8,7 @@ import { TopBar, BottomNav } from "./components/Nav";
 import { XPToast, Confetti } from "./components/UI";
 import { HomePage, TasksPage, HabitsPage } from "./components/Pages";
 import { FocusPage, SocialPage, ProfilePage } from "./components/MorePages";
+import { SquadsPage } from "./components/SquadsPage";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -49,7 +48,7 @@ export default function App() {
 
   const { tasks,  addTask,   toggleTask,  deleteTask,  toggleTaskPrivacy  } = useTasks(uid);
   const { habits, addHabit,  checkHabit,  deleteHabit, toggleHabitPrivacy } = useHabits(uid);
-  const { feed,   postToFeed, likePost, commentOnPost                      } = useFeed(roomId);
+  const { feed,   postToFeed, likePost,   commentOnPost                   } = useFeed(roomId);
   const { members, joinRoom, updateMemberStats                             } = useSquadMembers(roomId);
   const { moodLog, logMood                                                 } = useMoodLog(uid);
 
@@ -62,9 +61,7 @@ export default function App() {
     if (!profile || !uid || seeded) return;
     setSeeded(true);
     joinRoom(roomId, profile);
-    if (habits.length === 0) {
-      STARTER_HABITS.forEach(h => addHabit(h));
-    }
+    if (habits.length === 0) STARTER_HABITS.forEach(h => addHabit(h));
   }, [profile, uid]);
 
   useEffect(() => {
@@ -83,9 +80,7 @@ export default function App() {
 
   const feedPost = useCallback(async (text, type = "update") => {
     if (!profile) return;
-    await postToFeed(roomId, {
-      userId: uid, userName: profile.name, userAvatar: profile.avatar, text, type
-    });
+    await postToFeed(roomId, { userId: uid, userName: profile.name, userAvatar: profile.avatar, text, type });
   }, [uid, profile, roomId]);
 
   async function handleCompleteTask(task) {
@@ -107,14 +102,6 @@ export default function App() {
     await feedPost(`feeling ${mood.e} ${mood.l} today`, "mood");
   }
 
-  async function handleLike(postId, liked) {
-    await likePost(roomId, postId, uid, liked);
-  }
-
-  async function handleComment(roomId, postId, comment) {
-    await commentOnPost(roomId, postId, comment);
-  }
-
   async function handleFocusComplete() {
     await awardXP(40, "focus session");
     await feedPost("just finished a focus session 🎯", "xp");
@@ -122,10 +109,7 @@ export default function App() {
 
   async function handleCreate(data) {
     await updateProfile(data);
-    await postToFeed(roomId, {
-      userId: uid, userName: data.name,
-      userAvatar: data.avatar, text: "just joined FocusFlow! 👋", type: "join"
-    });
+    await postToFeed(roomId, { userId: uid, userName: data.name, userAvatar: data.avatar, text: "just joined FocusFlow! 👋", type: "join" });
     await joinRoom(roomId, { ...profile, ...data });
   }
 
@@ -145,16 +129,12 @@ export default function App() {
     <div style={{ maxWidth: 480, margin: "0 auto", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {xpToast  && <XPToast xp={xpToast} onDone={() => setXpToast(null)} />}
       {confetti && <Confetti onDone={() => setConfetti(false)} />}
-
       <TopBar profile={profile} page={page} />
-
       <div style={{ flex: 1, padding: "16px 16px 90px", overflowY: "auto" }}>
         {page === "home" && (
-          <HomePage
-            profile={profile} tasks={tasks} habits={habits} moodLog={moodLog}
+          <HomePage profile={profile} tasks={tasks} habits={habits} moodLog={moodLog}
             onMood={handleMood} onCheckHabit={handleCheckHabit}
-            onCompleteTask={handleCompleteTask} setPage={setPage}
-          />
+            onCompleteTask={handleCompleteTask} setPage={setPage} />
         )}
         {page === "tasks" && (
           <TasksPage tasks={tasks} addTask={addTask} toggleTask={async (id, done) => {
@@ -163,25 +143,22 @@ export default function App() {
           }} deleteTask={deleteTask} toggleTaskPrivacy={toggleTaskPrivacy} />
         )}
         {page === "habits" && (
-          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit} deleteHabit={deleteHabit} toggleHabitPrivacy={toggleHabitPrivacy} />
+          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit}
+            deleteHabit={deleteHabit} toggleHabitPrivacy={toggleHabitPrivacy} />
         )}
         {page === "focus"  && <FocusPage onComplete={handleFocusComplete} profile={profile} />}
+        {page === "squads" && <SquadsPage profile={profile} uid={uid} />}
         {page === "social" && (
-          <SocialPage
-            feed={feed} members={members} profile={profile}
-            roomId={roomId} onPost={feedPost} onLike={handleLike} onComment={handleComment}
-            uid={uid} addTask={addTask} addHabit={addHabit}
-          />
+          <SocialPage feed={feed} members={members} profile={profile}
+            roomId={roomId} onPost={feedPost} onLike={(postId, liked) => likePost(roomId, postId, uid, liked)}
+            onComment={commentOnPost} uid={uid} addTask={addTask} addHabit={addHabit} />
         )}
         {page === "profile" && (
-          <ProfilePage
-            profile={profile} updateProfile={updateProfile}
+          <ProfilePage profile={profile} updateProfile={updateProfile}
             tasks={tasks} habits={habits} moodLog={moodLog}
-            onLogout={logout} uid={uid}
-          />
+            onLogout={logout} uid={uid} />
         )}
       </div>
-
       <BottomNav page={page} setPage={setPage} />
     </div>
   );

@@ -557,6 +557,16 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
   const totalLogs  = habits.reduce((a, h) => a + (h.log?.length || 0), 0);
   const bestStreak = habits.reduce((a, h) => Math.max(a, h.streak || 0), 0);
   const [copied, setCopied] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editName, setEditName] = useState(profile.name || "");
+  const [editAvatar, setEditAvatar] = useState(profile.avatar || "🦊");
+  const AVATARS = ["🦊","🐼","🦋","🐸","🦄","🐙","🦁","🐺","🐨","🦝","🦩","🐬","🐯","🦅","🐲","🌟","🔥","⚡","🎯","🚀"];
+
+  async function saveProfile() {
+    if (!editName.trim()) return;
+    await updateProfile({ name: editName.trim(), avatar: editAvatar });
+    setEditMode(false);
+  }
 
   const moodCounts = MOODS.map(m => ({
     ...m, count: moodLog.filter(e => e.mood?.l === m.l).length
@@ -569,12 +579,33 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
   return (
     <div className="fadeUp">
       <Card style={{ textAlign: "center", marginBottom: 16, background: "linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" }}>
-        {profile.photoURL
+        {/* Avatar */}
+        {profile.photoURL && !editMode
           ? <img src={profile.photoURL} alt="" style={{ width: 72, height: 72, borderRadius: "50%", margin: "0 auto 12px", display: "block", border: "3px solid rgba(108,99,255,0.4)" }} />
-          : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 12px", border: "3px solid rgba(108,99,255,0.4)" }}>{profile.avatar}</div>
+          : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#6C63FF,#A29BFE)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 12px", border: "3px solid rgba(108,99,255,0.4)" }}>{editMode ? editAvatar : profile.avatar}</div>
         }
-        <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>{profile.name}</div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{profile.email}</div>
+
+        {editMode ? (
+          <div style={{ marginBottom: 12 }}>
+            <input value={editName} onChange={e => setEditName(e.target.value)} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, padding: "8px 14px", color: "#E8E9F3", fontSize: 16, fontWeight: 700, width: "100%", textAlign: "center", fontFamily: "inherit", marginBottom: 12, outline: "none" }} placeholder="Your name" />
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 8 }}>PICK AN AVATAR</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 14 }}>
+              {AVATARS.map(av => (
+                <button key={av} onClick={() => setEditAvatar(av)} style={{ width: 38, height: 38, borderRadius: 10, fontSize: 22, cursor: "pointer", border: "none", background: editAvatar === av ? "rgba(108,99,255,0.35)" : "rgba(255,255,255,0.05)", outline: editAvatar === av ? "2px solid #6C63FF" : "none" }}>{av}</button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <Btn color="#6C63FF" onClick={saveProfile}>Save Changes</Btn>
+              <Btn ghost color="rgba(255,255,255,0.3)" style={{ color: "rgba(255,255,255,0.5)" }} onClick={() => { setEditMode(false); setEditName(profile.name); setEditAvatar(profile.avatar); }}>Cancel</Btn>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 22, marginBottom: 4 }}>{profile.name}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 8 }}>{profile.email}</div>
+            <button onClick={() => { setEditMode(true); setEditName(profile.name); setEditAvatar(profile.avatar); }} style={{ background: "rgba(108,99,255,0.15)", border: "1px solid rgba(108,99,255,0.3)", borderRadius: 8, padding: "5px 14px", color: "#A29BFE", fontSize: 12, cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>✏️ Edit Profile</button>
+          </>
+        )}
 
         {/* UID copy */}
         <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "6px 12px", marginBottom: 12, cursor: "pointer" }} onClick={copyUID}>

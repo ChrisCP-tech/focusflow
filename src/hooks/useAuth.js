@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db, provider } from "../firebase/config";
 
 export function useAuth() {
-  const [user,    setUser]    = useState(undefined);
+  const [user,    setUser]    = useState(undefined); // undefined = loading
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
@@ -17,17 +17,18 @@ export function useAuth() {
         if (snap.exists()) {
           setProfile(snap.data());
         } else {
+          // First time — create profile
           const newProfile = {
-            uid:      firebaseUser.uid,
-            name:     firebaseUser.displayName || "Friend",
-            email:    firebaseUser.email,
-            photoURL: firebaseUser.photoURL,
-            avatar:   randomAvatar(),
-            xp:       0,
-            streak:   0,
-            adhdMode: true,
-            lastDate: today(),
-            joinedAt: serverTimestamp(),
+            uid:       firebaseUser.uid,
+            name:      firebaseUser.displayName || "Friend",
+            email:     firebaseUser.email,
+            photoURL:  firebaseUser.photoURL,
+            avatar:    randomAvatar(),
+            xp:        0,
+            streak:    0,
+            adhdMode:  true,
+            lastDate:  today(),
+            joinedAt:  serverTimestamp(),
           };
           await setDoc(ref, newProfile);
           setProfile(newProfile);

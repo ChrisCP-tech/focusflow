@@ -5,7 +5,7 @@ export function TopBar({ profile, page }) {
   if (!profile) return null;
   const lvl  = getLevel(profile.xp || 0);
   const prog = xpProgress(profile.xp || 0);
-  const labels = { home:"Home", tasks:"Tasks", habits:"Habits", social:"Squad", focus:"Focus", profile:"Profile" };
+  const labels = { home:"Home", tasks:"Tasks", habits:"Habits", social:"Friends", focus:"Focus", profile:"Profile", squads:"Squads" };
 
   return (
     <div style={{
@@ -50,12 +50,13 @@ export function TopBar({ profile, page }) {
 
 export function BottomNav({ page, setPage }) {
   const tabs = [
-    { id: "home",    icon: "🏠", label: "Home"   },
-    { id: "tasks",   icon: "✅", label: "Tasks"  },
-    { id: "habits",  icon: "🔥", label: "Habits" },
-    { id: "focus",   icon: "⏱",  label: "Focus"  },
-    { id: "social",  icon: "👥", label: "Squad"  },
-    { id: "profile", icon: "⚙️", label: "Me"     },
+    { id: "home",    icon: "🏠", label: "Home"    },
+    { id: "tasks",   icon: "✅", label: "Tasks"   },
+    { id: "habits",  icon: "🔥", label: "Habits"  },
+    { id: "focus",   icon: "⏱",  label: "Focus"   },
+    { id: "squads",  icon: "🚀", label: "Squads"  },
+    { id: "social",  icon: "👥", label: "Friends" },
+    { id: "profile", icon: "⚙️", label: "Me"      },
   ];
   return (
     <div style={{
@@ -70,14 +71,14 @@ export function BottomNav({ page, setPage }) {
         <button key={t.id} onClick={() => setPage(t.id)} style={{
           flex: 1, background: "none", border: "none",
           display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-          cursor: "pointer", padding: "6px 4px",
+          cursor: "pointer", padding: "6px 2px",
           opacity: page === t.id ? 1 : 0.38,
           transition: "opacity 0.15s ease"
         }}>
-          <div style={{ fontSize: 20, transform: page === t.id ? "scale(1.18)" : "scale(1)", transition: "transform 0.15s ease" }}>
+          <div style={{ fontSize: 18, transform: page === t.id ? "scale(1.18)" : "scale(1)", transition: "transform 0.15s ease" }}>
             {t.icon}
           </div>
-          <div style={{ fontSize: 9, fontWeight: 700, color: page === t.id ? "#6C63FF" : "rgba(255,255,255,0.5)", letterSpacing: "0.04em" }}>
+          <div style={{ fontSize: 8, fontWeight: 700, color: page === t.id ? "#6C63FF" : "rgba(255,255,255,0.5)", letterSpacing: "0.04em" }}>
             {t.label}
           </div>
           {page === t.id && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#6C63FF" }} />}

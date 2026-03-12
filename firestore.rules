@@ -2,56 +2,45 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users and their subcollections
     match /users/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
-
       match /tasks/{taskId} {
-        // Owner can read/write all; others can only read public ones
-        allow read: if request.auth != null && (
-          request.auth.uid == uid || resource.data.isPublic == true
-        );
+        allow read: if request.auth != null && (request.auth.uid == uid || resource.data.isPublic == true);
         allow write: if request.auth != null && request.auth.uid == uid;
       }
-
       match /habits/{habitId} {
-        allow read: if request.auth != null && (
-          request.auth.uid == uid || resource.data.isPublic == true
-        );
+        allow read: if request.auth != null && (request.auth.uid == uid || resource.data.isPublic == true);
         allow write: if request.auth != null && request.auth.uid == uid;
       }
-
       match /moods/{moodId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
-
       match /friends/{friendId} {
         allow read: if request.auth != null && request.auth.uid == uid;
         allow write: if request.auth != null;
       }
     }
 
-    // Squad rooms
     match /rooms/{roomId} {
-      match /feed/{postId} {
-        allow read, write: if request.auth != null;
-      }
-      match /members/{memberId} {
-        allow read, write: if request.auth != null;
-      }
+      match /feed/{postId} { allow read, write: if request.auth != null; }
+      match /members/{memberId} { allow read, write: if request.auth != null; }
     }
 
-    // Group Pomodoro sessions
+    match /squads/{squadId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid in resource.data.memberIds;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.ownerId;
+      match /feed/{postId} { allow read, write: if request.auth != null; }
+      match /tasks/{taskId} { allow read, write: if request.auth != null; }
+      match /challenges/{challengeId} { allow read, write: if request.auth != null; }
+    }
+
     match /pomodoroSessions/{sessionId} {
       allow read, write: if request.auth != null;
-
-      match /messages/{msgId} {
-        allow read, write: if request.auth != null;
-      }
-      match /participants/{uid} {
-        allow read, write: if request.auth != null;
-      }
+      match /messages/{msgId} { allow read, write: if request.auth != null; }
+      match /participants/{uid} { allow read, write: if request.auth != null; }
     }
   }
 }
