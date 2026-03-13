@@ -7,6 +7,124 @@ import { collection, query, where, limit, onSnapshot, getDoc, doc } from "fireba
 import { db } from "../firebase/config";
 
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
+/* ══════════════════════════ FOCUS MUSIC ═══════════════════════════════════ */
+const MUSIC_CHANNELS = [
+  { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE", videoId: "jfKfPfyJRdk" }, // lofi hip hop radio
+  { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF", videoId: "mPZkdNFkNps" }, // rain sounds
+  { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF", videoId: "2OEL4P1Rz04" }, // ambient space music
+  { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E", videoId: "Dx5qFachd3A" }, // jazz cafe
+  { id: "classical", label: "Classical",   emoji: "🎻", color: "#55EFC4", videoId: "mGUNd_8PKrs" }, // classical music
+];
+
+function FocusMusic() {
+  const [playing, setPlaying] = useState(null);
+  const [volume,  setVolume]  = useState(50);
+
+  function toggle(ch) {
+    setPlaying(p => p?.id === ch.id ? null : ch);
+  }
+
+  // Send volume to YouTube iframe when slider changes
+  useEffect(() => {
+    if (!playing) return;
+    const frame = document.getElementById("focus-music-frame");
+    if (frame) {
+      frame.contentWindow.postMessage(JSON.stringify({ event:"command", func:"setVolume", args:[volume] }), "*");
+    }
+  }, [volume, playing]);
+
+  return (
+    <div style={{ width:"100%", maxWidth:420, marginTop:32 }}>
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+        <span style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.35)", letterSpacing:"0.08em" }}>
+          🎵 FOCUS MUSIC
+        </span>
+        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+      </div>
+
+      {/* Channel buttons */}
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", justifyContent:"center" }}>
+        {MUSIC_CHANNELS.map(ch => {
+          const active = playing?.id === ch.id;
+          return (
+            <button key={ch.id} onClick={() => toggle(ch)} style={{
+              display:"flex", alignItems:"center", gap:6,
+              padding:"8px 14px", borderRadius:20, fontSize:13, fontWeight:600,
+              cursor:"pointer", border:`1.5px solid ${active ? ch.color : "rgba(255,255,255,0.1)"}`,
+              background: active ? `${ch.color}22` : "rgba(255,255,255,0.04)",
+              color: active ? ch.color : "rgba(255,255,255,0.5)",
+              transition:"all 0.2s"
+            }}>
+              <span>{ch.emoji}</span>
+              <span>{ch.label}</span>
+              {active && <span style={{ fontSize:10, animation:"pulse 1.2s ease-in-out infinite" }}>▶</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Volume slider */}
+      {playing && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, padding:"0 4px" }}>
+          <span style={{ fontSize:14 }}>🔈</span>
+          <input
+            type="range" min="0" max="100" value={volume}
+            onChange={e => setVolume(Number(e.target.value))}
+            style={{ flex:1, accentColor: playing?.color || "#6C63FF", cursor:"pointer" }}
+          />
+          <span style={{ fontSize:14 }}>🔊</span>
+          <span style={{ fontSize:11, color:"rgba(255,255,255,0.3)", minWidth:28, textAlign:"right" }}>{volume}%</span>
+        </div>
+      )}
+
+      {/* Hidden YouTube iframe */}
+      {playing && (
+        <div style={{ position:"fixed", bottom:-9999, left:-9999, width:1, height:1, overflow:"hidden" }}>
+          <iframe
+            key={playing.id}
+            id="focus-music-frame"
+            width="320" height="180"
+            src={`https://www.youtube.com/embed/${playing.videoId}?autoplay=1&loop=1&playlist=${playing.videoId}&enablejsapi=1`}
+            allow="autoplay"
+            title={playing.label}
+            onLoad={() => {
+              // Set initial volume via postMessage after load
+              setTimeout(() => {
+                const frame = document.getElementById("focus-music-frame");
+                if (frame) frame.contentWindow.postMessage(JSON.stringify({ event:"command", func:"setVolume", args:[volume] }), "*");
+              }, 1500);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Now playing pill */}
+      {playing && (
+        <div style={{
+          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          background:`${playing.color}15`, border:`1px solid ${playing.color}40`,
+          borderRadius:20, padding:"8px 16px", fontSize:12, color:playing.color, fontWeight:600
+        }}>
+          <span style={{ animation:"pulse 1.2s ease-in-out infinite" }}>♪</span>
+          Now playing: {playing.emoji} {playing.label}
+          <button onClick={() => setPlaying(null)} style={{
+            background:"none", border:"none", color:"rgba(255,255,255,0.3)",
+            cursor:"pointer", fontSize:14, padding:0, marginLeft:4, lineHeight:1
+          }}>✕</button>
+        </div>
+      )}
+
+      {!playing && (
+        <div style={{ textAlign:"center", fontSize:12, color:"rgba(255,255,255,0.2)", padding:"4px 0" }}>
+          Pick a vibe to reach flow state 🌊
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
   const [mode,       setMode]       = useState("solo");
@@ -334,6 +452,10 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
           </div>
         </div>
       )}
+
+      {/* ── FOCUS MUSIC ── */}
+      <FocusMusic />
+
     </div>
   );
 }
