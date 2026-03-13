@@ -1,5 +1,5 @@
 // src/components/MorePages.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
 import { fetchUserProfile, searchUsers } from "../hooks/useData";
@@ -9,29 +9,74 @@ import { db } from "../firebase/config";
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 /* ══════════════════════════ FOCUS MUSIC ═══════════════════════════════════ */
 const MUSIC_CHANNELS = [
-  { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE", videoId: "jfKfPfyJRdk" }, // lofi hip hop radio
-  { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF", videoId: "mPZkdNFkNps" }, // rain sounds
-  { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF", videoId: "2OEL4P1Rz04" }, // ambient space music
-  { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E", videoId: "Dx5qFachd3A" }, // jazz cafe
-  { id: "classical", label: "Classical",   emoji: "🎻", color: "#55EFC4", videoId: "mGUNd_8PKrs" }, // classical music
+  { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE" },
+  { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF" },
+  { id: "brown",     label: "Brown Noise", emoji: "🟫", color: "#B2876B" },
+  { id: "white",     label: "White Noise", emoji: "🤍", color: "#DFE6E9" },
+  { id: "forest",    label: "Forest",      emoji: "🌲", color: "#55EFC4" },
+  { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E" },
+  { id: "classical", label: "Classical",   emoji: "🎻", color: "#A8E6CF" },
+  { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF" },
+  { id: "campfire",  label: "Campfire",    emoji: "🔥", color: "#FF7675" },
 ];
-
 function FocusMusic() {
   const [playing, setPlaying] = useState(null);
-  const [volume,  setVolume]  = useState(50);
+  const [volume,  setVolume]  = useState(60);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+  const audioRef = useRef(null);
+
+  // All sounds are self-hosted in /public/sounds/ — no external dependencies
+  const AUDIO_SRCS = {
+    lofi:      "/sounds/lofi.mp3",
+    rain:      "/sounds/rain.mp3",
+    brown:     "/sounds/brown-noise.mp3",
+    white:     "/sounds/white-noise.mp3",
+    forest:    "/sounds/forest.mp3",
+    jazz:      "/sounds/jazz.mp3",
+    classical: "/sounds/classical.mp3",
+    ambient:   "/sounds/ambient.mp3",
+    campfire:  "/sounds/campfire.mp3",
+  };
 
   function toggle(ch) {
-    setPlaying(p => p?.id === ch.id ? null : ch);
+    if (playing?.id === ch.id) {
+      // Stop
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      setPlaying(null);
+      setError(null);
+    } else {
+      // Stop previous
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      setError(null);
+      setLoading(true);
+      setPlaying(ch);
+      const audio = new Audio(AUDIO_SRCS[ch.id]);
+      audio.loop = true;
+      audio.volume = volume / 100;
+      audio.addEventListener("canplaythrough", () => setLoading(false));
+      audio.addEventListener("error", () => {
+        setError("Couldn\'t load " + ch.label + " — check your connection");
+        setLoading(false);
+        setPlaying(null);
+      });
+      audio.play().catch(() => {
+        setError("Playback blocked — tap the button once more");
+        setLoading(false);
+      });
+      audioRef.current = audio;
+    }
   }
 
-  // Send volume to YouTube iframe when slider changes
+  // Volume changes apply instantly
   useEffect(() => {
-    if (!playing) return;
-    const frame = document.getElementById("focus-music-frame");
-    if (frame) {
-      frame.contentWindow.postMessage(JSON.stringify({ event:"command", func:"setVolume", args:[volume] }), "*");
-    }
-  }, [volume, playing]);
+    if (audioRef.current) audioRef.current.volume = volume / 100;
+  }, [volume]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
+  }, []);
 
   return (
     <div style={{ width:"100%", maxWidth:420, marginTop:32 }}>
@@ -59,7 +104,8 @@ function FocusMusic() {
             }}>
               <span>{ch.emoji}</span>
               <span>{ch.label}</span>
-              {active && <span style={{ fontSize:10, animation:"pulse 1.2s ease-in-out infinite" }}>▶</span>}
+              {active && !loading && <span style={{ fontSize:10, animation:"pulse 1.2s ease-in-out infinite" }}>▶</span>}
+              {active && loading  && <span style={{ fontSize:10, opacity:0.6 }}>…</span>}
             </button>
           );
         })}
@@ -79,37 +125,21 @@ function FocusMusic() {
         </div>
       )}
 
-      {/* Hidden YouTube iframe */}
-      {playing && (
-        <div style={{ position:"fixed", bottom:-9999, left:-9999, width:1, height:1, overflow:"hidden" }}>
-          <iframe
-            key={playing.id}
-            id="focus-music-frame"
-            width="320" height="180"
-            src={`https://www.youtube.com/embed/${playing.videoId}?autoplay=1&loop=1&playlist=${playing.videoId}&enablejsapi=1`}
-            allow="autoplay"
-            title={playing.label}
-            onLoad={() => {
-              // Set initial volume via postMessage after load
-              setTimeout(() => {
-                const frame = document.getElementById("focus-music-frame");
-                if (frame) frame.contentWindow.postMessage(JSON.stringify({ event:"command", func:"setVolume", args:[volume] }), "*");
-              }, 1500);
-            }}
-          />
-        </div>
+      {/* Error */}
+      {error && (
+        <div style={{ fontSize:12, color:"#FF6B6B", textAlign:"center", marginBottom:10 }}>{error}</div>
       )}
 
       {/* Now playing pill */}
-      {playing && (
+      {playing && !error && (
         <div style={{
           display:"flex", alignItems:"center", justifyContent:"center", gap:8,
           background:`${playing.color}15`, border:`1px solid ${playing.color}40`,
           borderRadius:20, padding:"8px 16px", fontSize:12, color:playing.color, fontWeight:600
         }}>
           <span style={{ animation:"pulse 1.2s ease-in-out infinite" }}>♪</span>
-          Now playing: {playing.emoji} {playing.label}
-          <button onClick={() => setPlaying(null)} style={{
+          {loading ? "Loading…" : `Now playing: ${playing.emoji} ${playing.label}`}
+          <button onClick={() => toggle(playing)} style={{
             background:"none", border:"none", color:"rgba(255,255,255,0.3)",
             cursor:"pointer", fontSize:14, padding:0, marginLeft:4, lineHeight:1
           }}>✕</button>
@@ -125,7 +155,7 @@ function FocusMusic() {
   );
 }
 
-export function FocusPage({ onComplete, profile, uid, roomMembers }) {
+function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
   const [mode,       setMode]       = useState("solo");
   const [selected,   setSelected]   = useState(1500);
