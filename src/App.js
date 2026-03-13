@@ -95,22 +95,28 @@ export default function App() {
     setTimeout(() => setToast(null), duration);
   }
 
-  // Award XP + gold, post to feed, return the feed post ID
+  // Award XP + gold, apply active boosts, post to feed, return the feed post ID
   const awardXP = useCallback(async (amount, gold, label) => {
     if (!uid || !profile) return null;
-    const newXP   = (profile.xp   || 0) + amount;
-    const newGold = (profile.gold || 0) + gold;
+    const now      = Date.now();
+    const xpMult   = profile.xpBoostUntil  && profile.xpBoostUntil  > now ? 2 : 1;
+    const goldMult = profile.goldRushUntil && profile.goldRushUntil > now ? 2 : 1;
+    const finalXP   = amount * xpMult;
+    const finalGold = gold   * goldMult;
+    const newXP   = (profile.xp   || 0) + finalXP;
+    const newGold = (profile.gold || 0) + finalGold;
     const oldLvl  = getLevel(profile.xp || 0);
     const newLvl  = getLevel(newXP);
     await updateProfile({ xp: newXP, gold: newGold });
-    setXpToast({ xp: amount, gold });
-    if (amount >= 40) setConfetti(true);
+    setXpToast({ xp: finalXP, gold: finalGold });
+    if (finalXP >= 40) setConfetti(true);
     if (newLvl > oldLvl) {
       setTimeout(() => showToast(`🎉 Level Up! You're now Level ${newLvl} — ${LEVEL_NAMES[newLvl-1]}!`), 800);
     }
+    const boostNote = xpMult > 1 ? " ⚡×2" : goldMult > 1 ? " 🪙×2" : "";
     const postId = await postToFeed(roomId, {
       userId: uid, userName: profile.name, userAvatar: profile.avatar,
-      text: `earned +${amount}XP & +${gold}🪙 for: ${label} ✨`, type: "xp"
+      text: `earned +${finalXP}XP & +${finalGold}🪙 for: ${label} ✨${boostNote}`, type: "xp"
     });
     return postId;
   }, [uid, profile, roomId]);
@@ -154,6 +160,8 @@ export default function App() {
 
     await toggleTask(task.id, true, task);
     const isPrivate = task.isPublic === false;
+    // Track total tasks done for title system
+    await updateProfile({ totalTasksDone: (profile.totalTasksDone||0) + 1 });
 
     // Award XP — for private tasks use a generic label so title doesn't appear in feed
     const xpLabel   = isPrivate ? "a private task" : task.title;
@@ -175,6 +183,8 @@ export default function App() {
       showToast(`↩ "${habit.name}" unchecked`);
       return;
     }
+    // Track total habits logged for title system
+    await updateProfile({ totalHabitsLogged: (profile.totalHabitsLogged||0) + 1 });
     const goldBonus = Math.min(5 + Math.floor(result * 1.5), 30);
     await awardXP(10 + result * 2, goldBonus, `habit: ${habit.name}`);
     await feedPost(`completed habit: "${habit.name}" 🔥 (${result} day streak!)`, "habit");

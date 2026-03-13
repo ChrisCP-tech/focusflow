@@ -1080,7 +1080,7 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0, flexShrink:0 }}>
-          <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, ...getFrameStyle(friendData || f) }}>{f.avatar}</div>
+          <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, border:"2px solid rgba(108,99,255,0.4)" }}>{f.avatar}</div>
         </button>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -1437,7 +1437,7 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
   return (
     <div className="fadeUp">
       {/* Profile card */}
-      <Card style={{ marginBottom:16, textAlign:"center", ...getBannerStyle(profile) }}>
+      <Card style={{ marginBottom:16, textAlign:"center", background:"linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" }}>
         {editMode ? (
           <>
             <div style={{ fontSize:56, marginBottom:12 }}>{editAvatar}</div>
@@ -1456,8 +1456,8 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
         ) : (
           <>
             {profile.photoURL
-              ? <img src={profile.photoURL} alt="" style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 8px", display:"block", ...getFrameStyle(profile) }} />
-              : <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 8px", ...getFrameStyle(profile) }}>{profile.avatar}</div>
+              ? <img src={profile.photoURL} alt="" style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 8px", display:"block", border:"3px solid rgba(108,99,255,0.4)" }} />
+              : <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 8px", border:"3px solid rgba(108,99,255,0.4)" }}>{profile.avatar}</div>
             }
             <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:2 }}>{profile.name}</div>
             <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}{getActiveTitle(profile) ? ` · ${getActiveTitle(profile)}` : ""}</div>
@@ -1609,89 +1609,130 @@ function RewardsTab({ uid, profile, rewards, addReward, redeemReward, deleteRewa
 }
 
 /* ─── Cosmetic helpers ─────────────────────────────────────────────────────── */
-export function getFrameStyle(profile) {
-  const f = profile?.activeFrame;
-  if (f === "frame_1") return { border:"3px solid #FDCB6E", boxShadow:"0 0 10px rgba(253,203,110,0.5)" };
-  if (f === "frame_2") return { border:"3px solid transparent", backgroundClip:"padding-box", boxShadow:"0 0 14px rgba(108,99,255,0.8), 0 0 28px rgba(162,155,254,0.4)", outline:"2px solid #A29BFE" };
-  return { border:"3px solid rgba(108,99,255,0.4)" };
-}
-
-export function getBannerStyle(profile) {
-  const b = profile?.activeBanner;
-  if (b === "banner_1") return { background:"linear-gradient(135deg,rgba(255,107,107,0.25),rgba(225,112,85,0.15))", borderBottom:"2px solid rgba(255,107,107,0.4)" };
-  if (b === "banner_2") return { background:"linear-gradient(135deg,rgba(108,99,255,0.25),rgba(162,155,254,0.1))", borderBottom:"2px solid rgba(108,99,255,0.5)" };
-  return { background:"linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" };
-}
-
 export function getActiveTitle(profile) {
-  const t = profile?.activeTitle;
-  if (t === "title_1") return "🦉 Night Owl";
-  if (t === "title_2") return "🎯 Focus Master";
-  return null;
+  if (!profile?.activeTitle) return null;
+  const t = TITLES.find(t => t.id === profile.activeTitle);
+  return t ? `${t.icon} ${t.label}` : null;
 }
+
+/* ─── Title definitions — earned by achievement ────────────────────────────── */
+export const TITLES = [
+  // Tasks
+  { id:"task_10",    label:"Beginner",       desc:"Complete 10 tasks",          icon:"✅", check: p => (p.totalTasksDone||0) >= 10   },
+  { id:"task_50",    label:"Grinder",        desc:"Complete 50 tasks",          icon:"💪", check: p => (p.totalTasksDone||0) >= 50   },
+  { id:"task_100",   label:"Century",        desc:"Complete 100 tasks",         icon:"💯", check: p => (p.totalTasksDone||0) >= 100  },
+  { id:"task_500",   label:"Legend",         desc:"Complete 500 tasks",         icon:"🏆", check: p => (p.totalTasksDone||0) >= 500  },
+  // Streaks
+  { id:"streak_7",   label:"Week Warrior",   desc:"Reach a 7 day streak",       icon:"🔥", check: p => (p.streak||0) >= 7           },
+  { id:"streak_30",  label:"Monthly",        desc:"Reach a 30 day streak",      icon:"📅", check: p => (p.streak||0) >= 30          },
+  { id:"streak_100", label:"Century Streak", desc:"Reach a 100 day streak",     icon:"⚡", check: p => (p.streak||0) >= 100         },
+  // Habits
+  { id:"habit_50",   label:"Habit Starter",  desc:"Log 50 habits total",        icon:"🌱", check: p => (p.totalHabitsLogged||0) >= 50  },
+  { id:"habit_200",  label:"Habit Machine",  desc:"Log 200 habits total",       icon:"⚙️", check: p => (p.totalHabitsLogged||0) >= 200 },
+  { id:"habit_500",  label:"Habit God",      desc:"Log 500 habits total",       icon:"🧬", check: p => (p.totalHabitsLogged||0) >= 500 },
+  // Level
+  { id:"level_5",    label:"Apprentice",     desc:"Reach Level 5",              icon:"🎯", check: p => (p.level||1) >= 5            },
+  { id:"level_10",   label:"Veteran",        desc:"Reach Level 10",             icon:"🛡️", check: p => (p.level||1) >= 10           },
+  { id:"level_15",   label:"Elite",          desc:"Reach Level 15",             icon:"💎", check: p => (p.level||1) >= 15           },
+  { id:"level_20",   label:"Ascended",       desc:"Reach Level 20",             icon:"🌌", check: p => (p.level||1) >= 20           },
+];
 
 /* ─── Shop Tab ────────────────────────────────────────────────────────────── */
 function ShopTab({ profile, updateProfile, lvl }) {
-  const COSMETICS = [
-    { id:"shield_1",  name:"Streak Shield",        desc:"Protect your streak once",     cost:30,  icon:"🛡️", type:"shield"  },
-    { id:"frame_1",   name:"Golden Frame",          desc:"Gold avatar border",           cost:50,  icon:"🖼️", type:"frame"   },
-    { id:"frame_2",   name:"Cosmic Frame",          desc:"Glowing cosmic border",        cost:120, icon:"🌌", type:"frame",  minLevel:7 },
-    { id:"banner_1",  name:"Flame Banner",          desc:"Red flame profile banner",     cost:75,  icon:"🔥", type:"banner"  },
-    { id:"banner_2",  name:"Galaxy Banner",         desc:"Purple galaxy profile banner", cost:150, icon:"🪐", type:"banner", minLevel:9 },
-    { id:"title_1",   name:"Night Owl title",       desc:"Shown on your profile",        cost:40,  icon:"🦉", type:"title"   },
-    { id:"title_2",   name:"Focus Master title",    desc:"Shown on your profile",        cost:80,  icon:"🎯", type:"title"   },
+  const SHOP_ITEMS = [
+    { id:"shield_1",   name:"Streak Shield",    desc:"Protect your streak once if you miss a day",   cost:30,  icon:"🛡️", type:"shield"   },
+    { id:"xp_boost",   name:"XP Boost",         desc:"Earn 2× XP for the next 24 hours",             cost:80,  icon:"⚡", type:"xp_boost" },
+    { id:"gold_rush",  name:"Gold Rush",         desc:"Earn 2× gold for the next 24 hours",           cost:80,  icon:"🪙", type:"gold_rush" },
+    { id:"streak_rec", name:"Streak Recovery",   desc:"Restore a broken streak (use within 24h)",     cost:150, icon:"💊", type:"streak_rec", minLevel:5 },
   ];
+
+  const now = Date.now();
 
   async function buy(item) {
     if ((profile.gold||0) < item.cost) return;
-    const owned = profile.ownedCosmetics || [];
-    if (owned.includes(item.id)) return;
-    await updateProfile({ gold: (profile.gold||0) - item.cost, ownedCosmetics: [...owned, item.id] });
+    const newGold = (profile.gold||0) - item.cost;
+
+    if (item.type === "shield") {
+      const shields = (profile.streakShields||0) + 1;
+      await updateProfile({ gold: newGold, streakShields: shields });
+    } else if (item.type === "xp_boost") {
+      await updateProfile({ gold: newGold, xpBoostUntil: now + 24*60*60*1000 });
+    } else if (item.type === "gold_rush") {
+      await updateProfile({ gold: newGold, goldRushUntil: now + 24*60*60*1000 });
+    } else if (item.type === "streak_rec") {
+      await updateProfile({ gold: newGold, streakRecoveryAvailable: true });
+    }
   }
 
-  async function equip(item) {
-    if (item.type === "frame")  await updateProfile({ activeFrame:  item.id });
-    if (item.type === "banner") await updateProfile({ activeBanner: item.id });
-    if (item.type === "title")  await updateProfile({ activeTitle:  item.id });
-  }
+  // Active boost status
+  const xpActive   = profile?.xpBoostUntil   && profile.xpBoostUntil   > now;
+  const goldActive = profile?.goldRushUntil  && profile.goldRushUntil  > now;
 
-  async function unequip(item) {
-    if (item.type === "frame")  await updateProfile({ activeFrame:  null });
-    if (item.type === "banner") await updateProfile({ activeBanner: null });
-    if (item.type === "title")  await updateProfile({ activeTitle:  null });
+  function timeLeft(until) {
+    const ms = until - now;
+    const h  = Math.floor(ms / 3600000);
+    const m  = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${m}m left`;
   }
 
   return (
     <>
-      <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:12 }}>Spend your gold on cosmetics and power-ups 🪙</div>
-      {COSMETICS.map(item => {
-        const owned     = (profile.ownedCosmetics||[]).includes(item.id);
+      <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:12 }}>Spend your gold on power-ups 🪙</div>
+      {SHOP_ITEMS.map(item => {
         const locked    = item.minLevel && lvl < item.minLevel;
         const canAfford = (profile.gold||0) >= item.cost;
-        const activeKey = item.type === "frame" ? "activeFrame" : item.type === "banner" ? "activeBanner" : "activeTitle";
-        const isEquipped = profile?.[activeKey] === item.id;
-        const isEquippable = ["frame","banner","title"].includes(item.type);
+        const isActive  = (item.type === "xp_boost" && xpActive) || (item.type === "gold_rush" && goldActive);
+        const shields   = item.type === "shield" ? (profile.streakShields||0) : null;
+        const hasRecovery = item.type === "streak_rec" && profile?.streakRecoveryAvailable;
+
         return (
-          <Card key={item.id} style={{ marginBottom:10, opacity:locked?0.5:1, borderLeft: isEquipped ? "3px solid #55EFC4" : undefined }}>
+          <Card key={item.id} style={{ marginBottom:10, opacity:locked?0.5:1, borderLeft: isActive ? "3px solid #55EFC4" : undefined }}>
             <div style={{ display:"flex", alignItems:"center", gap:12 }}>
               <div style={{ fontSize:32 }}>{item.icon}</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:600, fontSize:14 }}>{item.name} {isEquipped && <span style={{ fontSize:10, color:"#55EFC4", fontWeight:700 }}>● ACTIVE</span>}</div>
+                <div style={{ fontWeight:600, fontSize:14 }}>
+                  {item.name}
+                  {isActive && <span style={{ fontSize:10, color:"#55EFC4", fontWeight:700, marginLeft:6 }}>● ACTIVE</span>}
+                  {shields > 0 && item.type === "shield" && <span style={{ fontSize:10, color:"#A29BFE", fontWeight:700, marginLeft:6 }}>×{shields} owned</span>}
+                  {hasRecovery && <span style={{ fontSize:10, color:"#FDCB6E", fontWeight:700, marginLeft:6 }}>● READY</span>}
+                </div>
                 <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{item.desc}</div>
+                {isActive && <div style={{ fontSize:11, color:"#55EFC4", marginTop:2 }}>{timeLeft(item.type === "xp_boost" ? profile.xpBoostUntil : profile.goldRushUntil)}</div>}
                 {locked && <div style={{ fontSize:11, color:"#FDCB6E", marginTop:2 }}>Unlocks at Level {item.minLevel}</div>}
               </div>
-              <div style={{ display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end" }}>
-                {!owned && !locked && (
-                  <Btn small color={canAfford?"#FDCB6E":"rgba(255,255,255,0.1)"} style={{ color:canAfford?"#0B0D17":"rgba(255,255,255,0.3)" }} onClick={() => buy(item)} disabled={!canAfford}>{item.cost}🪙</Btn>
-                )}
-                {locked && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>🔒</div>}
-                {owned && isEquippable && (
-                  isEquipped
-                    ? <Btn small ghost color="#55EFC4" onClick={() => unequip(item)}>Unequip</Btn>
-                    : <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => equip(item)}>Equip</Btn>
-                )}
-                {owned && !isEquippable && <div style={{ fontSize:13, color:"#55EFC4", fontWeight:700 }}>Owned ✓</div>}
+              <Btn small
+                color={canAfford && !locked ? "#FDCB6E" : "rgba(255,255,255,0.1)"}
+                style={{ color: canAfford && !locked ? "#0B0D17" : "rgba(255,255,255,0.3)", flexShrink:0 }}
+                onClick={() => buy(item)}
+                disabled={!canAfford || locked}
+              >{item.cost}🪙</Btn>
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* Titles section */}
+      <div style={{ fontSize:12, fontWeight:700, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em", margin:"20px 0 10px" }}>TITLES — EARNED BY ACHIEVEMENT</div>
+      {TITLES.map(t => {
+        const earned   = t.check(profile);
+        const equipped = profile?.activeTitle === t.id;
+        return (
+          <Card key={t.id} style={{ marginBottom:8, opacity: earned ? 1 : 0.4, borderLeft: equipped ? "3px solid #A29BFE" : undefined }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ fontSize:26 }}>{t.icon}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:600, fontSize:13 }}>
+                  {t.label}
+                  {equipped && <span style={{ fontSize:10, color:"#A29BFE", fontWeight:700, marginLeft:6 }}>● EQUIPPED</span>}
+                </div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>{t.desc}</div>
               </div>
+              {earned
+                ? equipped
+                  ? <Btn small ghost color="#A29BFE" onClick={() => updateProfile({ activeTitle: null })}>Unequip</Btn>
+                  : <Btn small color="#A29BFE" style={{ color:"#0B0D17" }} onClick={() => updateProfile({ activeTitle: t.id })}>Equip</Btn>
+                : <div style={{ fontSize:11, color:"rgba(255,255,255,0.2)" }}>🔒 Locked</div>
+              }
             </div>
           </Card>
         );
@@ -1760,8 +1801,8 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
       <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:480, background:"#0F1120", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"90vh", overflowY:"auto" }}>
 
         {/* Header */}
-        <div style={{ textAlign:"center", marginBottom:20, borderRadius:14, padding:"16px 0 8px", ...getBannerStyle(targetProfile) }}>
-          <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", ...getFrameStyle(targetProfile) }}>{targetProfile.avatar}</div>
+        <div style={{ textAlign:"center", marginBottom:20 }}>
+          <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", border:"3px solid rgba(108,99,255,0.4)" }}>{targetProfile.avatar}</div>
           <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>{targetProfile.name}</div>
           <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}{getActiveTitle(targetProfile) ? ` · ${getActiveTitle(targetProfile)}` : ""}</div>
           <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:8, fontSize:13 }}>
