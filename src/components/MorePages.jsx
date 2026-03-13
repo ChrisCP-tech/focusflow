@@ -623,7 +623,7 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
   const activeTasks = tasks.filter(t => !t.done);
   const doneTasks   = tasks.filter(t => t.done);
   const level       = friendData ? getLevel(friendData.xp || 0) : null;
-  const xpPct       = friendData ? xpProgress(friendData.xp || 0) : 0;
+  const xpPct       = friendData ? (xpProgress(friendData.xp || 0).pct || 0) : 0;
   const streak      = friendData?.streak || f?.streak || 0;
 
   if (!f) return null;
