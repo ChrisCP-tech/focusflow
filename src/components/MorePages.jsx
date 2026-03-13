@@ -19,14 +19,27 @@ const MUSIC_CHANNELS = [
   { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF" },
   { id: "campfire",  label: "Campfire",    emoji: "🔥", color: "#FF7675" },
 ];
-function FocusMusic() {
-  const [playing, setPlaying] = useState(null);
-  const [volume,  setVolume]  = useState(60);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState(null);
-  const audioRef = useRef(null);
+function FocusMusic({ profile, uid }) {
+  const [playing,       setPlaying]       = useState(null);
+  const [volume,        setVolume]        = useState(60);
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState(null);
+  const [customTracks,  setCustomTracks]  = useState([]);
+  const [uploading,     setUploading]     = useState(false);
+  const [uploadError,   setUploadError]   = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const audioRef  = useRef(null);
+  const fileInput = useRef(null);
 
-  // All sounds are self-hosted in /public/sounds/ — no external dependencies
+  // Tier logic — everyone starts with 1 slot free
+  const userLevel   = profile?.level || 1;
+  const isPremium   = profile?.isPremium || false;
+  const baseSlots   = userLevel >= 5 ? 2 : 1;          // level 5 unlocks slot 2
+  const bonusSlots  = isPremium ? 5 : 0;               // premium adds 5 more
+  const uploadLimit = baseSlots + bonusSlots;           // max 7 at level 5+ premium
+  const canUpload   = true;                             // everyone can upload
+
+  // Built-in sounds — self-hosted, never break
   const AUDIO_SRCS = {
     lofi:      "/sounds/lofi.mp3",
     rain:      "/sounds/rain.mp3",
@@ -39,44 +52,131 @@ function FocusMusic() {
     campfire:  "/sounds/campfire.mp3",
   };
 
+  // Load custom tracks from Firestore on mount
+  useEffect(() => {
+    if (!uid) return;
+    const load = async () => {
+      const { db } = await import("../firebase/config");
+      const { collection, onSnapshot, query, orderBy } = await import("firebase/firestore");
+      const q = query(collection(db, "users", uid, "customSounds"), orderBy("createdAt", "desc"));
+      const unsub = onSnapshot(q, snap => {
+        setCustomTracks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      return unsub;
+    };
+    let unsub;
+    load().then(u => { unsub = u; });
+    return () => { if (unsub) unsub(); };
+  }, [uid]);
+
+  // Play/stop toggle
   function toggle(ch) {
     if (playing?.id === ch.id) {
-      // Stop
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      setPlaying(null);
-      setError(null);
+      setPlaying(null); setError(null);
     } else {
-      // Stop previous
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      setError(null);
-      setLoading(true);
-      setPlaying(ch);
-      const audio = new Audio(AUDIO_SRCS[ch.id]);
+      setError(null); setLoading(true); setPlaying(ch);
+      const audio = new Audio(ch.src || AUDIO_SRCS[ch.id]);
       audio.loop = true;
       audio.volume = volume / 100;
       audio.addEventListener("canplaythrough", () => setLoading(false));
       audio.addEventListener("error", () => {
-        setError("Couldn\'t load " + ch.label + " — check your connection");
-        setLoading(false);
-        setPlaying(null);
+        setError("Couldn\'t load " + ch.label + " — try again");
+        setLoading(false); setPlaying(null);
       });
       audio.play().catch(() => {
-        setError("Playback blocked — tap the button once more");
+        setError("Tap the button once more to start playback");
         setLoading(false);
       });
       audioRef.current = audio;
     }
   }
 
-  // Volume changes apply instantly
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume / 100;
   }, [volume]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
   }, []);
+
+  // Upload handler
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("audio/")) { setUploadError("Please select an MP3 or audio file"); return; }
+    if (file.size > 20 * 1024 * 1024) { setUploadError("File must be under 20MB"); return; }
+    if (customTracks.length >= uploadLimit) {
+      const nextUnlock = userLevel < 5 ? "Reach Level 5 to unlock slot 2" : isPremium ? "Premium limit reached" : "Upgrade to Premium for up to 5 extra slots";
+      setUploadError(`Limit reached (${uploadLimit} slot${uploadLimit > 1 ? "s" : ""}) — ${nextUnlock}`);
+      return;
+    }
+
+    setUploading(true); setUploadError(null);
+    try {
+      const { storage, db } = await import("../firebase/config");
+      const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+      const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+
+      const trackName = file.name.replace(/\.mp3$/i, "").replace(/[_-]/g, " ").slice(0, 40);
+      const storageRef = ref(storage, `users/${uid}/sounds/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+
+      await addDoc(collection(db, "users", uid, "customSounds"), {
+        label: trackName,
+        url,
+        storagePath: storageRef.fullPath,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      setUploadError("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
+
+  // Delete handler
+  async function handleDelete(track) {
+    try {
+      const { storage, db } = await import("../firebase/config");
+      const { ref, deleteObject } = await import("firebase/storage");
+      const { doc, deleteDoc } = await import("firebase/firestore");
+
+      if (playing?.id === track.id) {
+        if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+        setPlaying(null);
+      }
+
+      await deleteObject(ref(storage, track.storagePath)).catch(() => {});
+      await deleteDoc(doc(db, "users", uid, "customSounds", track.id));
+      setConfirmDelete(null);
+    } catch (err) {
+      setUploadError("Delete failed: " + err.message);
+      setConfirmDelete(null);
+    }
+  }
+
+  const builtInChannels = [
+    { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE" },
+    { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF" },
+    { id: "brown",     label: "Brown Noise", emoji: "🟫", color: "#B2876B" },
+    { id: "white",     label: "White Noise", emoji: "🤍", color: "#DFE6E9" },
+    { id: "forest",    label: "Forest",      emoji: "🌲", color: "#55EFC4" },
+    { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E" },
+    { id: "classical", label: "Classical",   emoji: "🎻", color: "#A8E6CF" },
+    { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF" },
+    { id: "campfire",  label: "Campfire",    emoji: "🔥", color: "#FF7675" },
+  ];
+
+  // Custom tracks get a purple color + music note emoji
+  const customChannels = customTracks.map(t => ({
+    id: t.id, label: t.label, emoji: "🎵", color: "#E17055", src: t.url, isCustom: true,
+  }));
+
+  const allChannels = [...builtInChannels, ...customChannels];
 
   return (
     <div style={{ width:"100%", maxWidth:420, marginTop:32 }}>
@@ -89,9 +189,9 @@ function FocusMusic() {
         <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
       </div>
 
-      {/* Channel buttons */}
-      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", justifyContent:"center" }}>
-        {MUSIC_CHANNELS.map(ch => {
+      {/* Built-in channel buttons */}
+      <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", justifyContent:"center" }}>
+        {builtInChannels.map(ch => {
           const active = playing?.id === ch.id;
           return (
             <button key={ch.id} onClick={() => toggle(ch)} style={{
@@ -111,6 +211,100 @@ function FocusMusic() {
         })}
       </div>
 
+      {/* Custom tracks */}
+      {customChannels.length > 0 && (
+        <div style={{ marginBottom:12 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.3)", letterSpacing:"0.06em", marginBottom:8 }}>
+            YOUR TRACKS
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {customChannels.map(ch => {
+              const active = playing?.id === ch.id;
+              return (
+                <div key={ch.id} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <button onClick={() => toggle(ch)} style={{
+                    flex:1, display:"flex", alignItems:"center", gap:8,
+                    padding:"8px 14px", borderRadius:20, fontSize:13, fontWeight:600,
+                    cursor:"pointer", border:`1.5px solid ${active ? ch.color : "rgba(255,255,255,0.1)"}`,
+                    background: active ? `${ch.color}22` : "rgba(255,255,255,0.04)",
+                    color: active ? ch.color : "rgba(255,255,255,0.6)",
+                    transition:"all 0.2s", textAlign:"left"
+                  }}>
+                    <span>{ch.emoji}</span>
+                    <span style={{ flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{ch.label}</span>
+                    {active && !loading && <span style={{ fontSize:10, animation:"pulse 1.2s ease-in-out infinite" }}>▶</span>}
+                  </button>
+                  {/* Delete button */}
+                  {confirmDelete === ch.id ? (
+                    <div style={{ display:"flex", gap:4 }}>
+                      <button onClick={() => handleDelete(ch)} style={{
+                        padding:"4px 10px", borderRadius:12, fontSize:11, fontWeight:700,
+                        background:"#FF6B6B22", border:"1px solid #FF6B6B", color:"#FF6B6B", cursor:"pointer"
+                      }}>Delete</button>
+                      <button onClick={() => setConfirmDelete(null)} style={{
+                        padding:"4px 10px", borderRadius:12, fontSize:11,
+                        background:"none", border:"1px solid rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.4)", cursor:"pointer"
+                      }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(ch.id)} style={{
+                      width:28, height:28, borderRadius:"50%", border:"1px solid rgba(255,255,255,0.1)",
+                      background:"rgba(255,255,255,0.04)", color:"rgba(255,255,255,0.3)",
+                      cursor:"pointer", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0
+                    }}>✕</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Upload section */}
+      <div style={{ marginBottom:14 }}>
+        {canUpload ? (
+          <div>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="audio/*,.mp3,.m4a,.wav,.ogg"
+              onChange={handleUpload}
+              style={{ display:"none" }}
+            />
+            <button
+              onClick={() => customTracks.length < uploadLimit && fileInput.current?.click()}
+              disabled={uploading || customTracks.length >= uploadLimit}
+              style={{
+                width:"100%", padding:"9px 0", borderRadius:20, fontSize:12, fontWeight:600,
+                cursor: customTracks.length >= uploadLimit ? "not-allowed" : "pointer",
+                border:"1.5px dashed rgba(255,255,255,0.15)",
+                background:"rgba(255,255,255,0.03)",
+                color: customTracks.length >= uploadLimit ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.5)",
+                transition:"all 0.2s"
+              }}
+            >
+              {uploading ? "⏳ Uploading…"
+                : customTracks.length >= uploadLimit
+                  ? `✓ Slots full (${uploadLimit}/${uploadLimit})`
+                  : `＋ Upload your own MP3 (${customTracks.length}/${uploadLimit})`}
+            </button>
+            {/* Upgrade hints */}
+            {!uploading && (
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", textAlign:"center", marginTop:5 }}>
+                {customTracks.length >= uploadLimit && !isPremium
+                  ? userLevel < 5
+                    ? "⚡ Reach Level 5 for slot 2 · Premium unlocks 5 more"
+                    : "⚡ Upgrade to Premium for 5 extra slots"
+                  : "MP3 · M4A · WAV · max 20MB"}
+              </div>
+            )}
+            {uploadError && (
+              <div style={{ fontSize:11, color:"#FF6B6B", marginTop:6, textAlign:"center" }}>{uploadError}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       {/* Volume slider */}
       {playing && (
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, padding:"0 4px" }}>
@@ -125,10 +319,7 @@ function FocusMusic() {
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div style={{ fontSize:12, color:"#FF6B6B", textAlign:"center", marginBottom:10 }}>{error}</div>
-      )}
+      {error && <div style={{ fontSize:12, color:"#FF6B6B", textAlign:"center", marginBottom:10 }}>{error}</div>}
 
       {/* Now playing pill */}
       {playing && !error && (
@@ -138,7 +329,7 @@ function FocusMusic() {
           borderRadius:20, padding:"8px 16px", fontSize:12, color:playing.color, fontWeight:600
         }}>
           <span style={{ animation:"pulse 1.2s ease-in-out infinite" }}>♪</span>
-          {loading ? "Loading…" : `Now playing: ${playing.emoji} ${playing.label}`}
+          {loading ? "Loading…" : `${playing.emoji} ${playing.label}`}
           <button onClick={() => toggle(playing)} style={{
             background:"none", border:"none", color:"rgba(255,255,255,0.3)",
             cursor:"pointer", fontSize:14, padding:0, marginLeft:4, lineHeight:1
@@ -154,6 +345,7 @@ function FocusMusic() {
     </div>
   );
 }
+
 
 export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
@@ -484,7 +676,7 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
       )}
 
       {/* ── FOCUS MUSIC ── */}
-      <FocusMusic />
+      <FocusMusic profile={profile} uid={uid} />
 
     </div>
   );
