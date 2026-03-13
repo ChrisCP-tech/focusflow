@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
-import { fetchUserProfile, searchUsers, searchUsersByEmail } from "../hooks/useData";
+import { fetchUserProfile, searchUsers } from "../hooks/useData";
 import { collection, query, where, limit, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
@@ -643,11 +643,16 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
   const accepted       = (friends||[]).filter(f => f.status==="accepted");
   const pendingInvites = (taskInvites||[]).filter(i => i.status === "pending");
 
-  // Online = last seen within 5 minutes
+  // Friends-only feed — only show posts from accepted friends + yourself
+  const friendUidSet = new Set([uid, ...(accepted||[]).map(f => f.uid)]);
+  const friendsFeed  = (feed||[]).filter(p => friendUidSet.has(p.userId));
+
+  // Online = last seen within 5 minutes, friends only (+ yourself)
   const now = Date.now();
   const onlineMembers = (members||[]).filter(m => {
     const lastSeen = m.lastSeen?.toMillis?.() || m.lastSeen?.seconds * 1000 || 0;
-    return now - lastSeen < 5 * 60 * 1000;
+    const isOnline = now - lastSeen < 5 * 60 * 1000;
+    return isOnline && friendUidSet.has(m.uid);
   }).sort((a, b) => (b.xp||0) - (a.xp||0));
 
   function post() {
@@ -668,7 +673,6 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     if (q.trim().length < 2) { setSearchRes([]); return; }
     setSearching(true);
     const results = await searchUsers(q.trim(), uid);
-    // Filter out existing friends
     const friendUids = new Set((friends||[]).map(f => f.uid));
     setSearchRes(results.filter(u => !friendUids.has(u.uid)));
     setSearching(false);
@@ -686,7 +690,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
   }
 
   const tabs = [
-    ["feed",    "🌍 Global"],
+    ["feed",    "🏠 Feed"],
     ["friends", "👥 Friends" + (pending.length ? ` (${pending.length})` : "")],
     ["invites", "📨 Invites" + (pendingInvites.length ? ` (${pendingInvites.length})` : "")],
   ];
@@ -694,10 +698,12 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
   return (
     <div className="fadeUp">
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-        <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>Social 🌍</h2>
+        <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>Friends 👥</h2>
         {onlineMembers.length > 0 && (
           <div style={{ fontSize:11, color:"#55EFC4", fontWeight:600 }}>
-            {onlineMembers.length} online now
+            {onlineMembers.filter(m => m.uid !== uid).length > 0
+              ? `${onlineMembers.filter(m => m.uid !== uid).length} friend${onlineMembers.filter(m=>m.uid!==uid).length>1?"s":""} online`
+              : "You're online"}
           </div>
         )}
       </div>
@@ -754,10 +760,10 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
         </button>
       )}
 
-      {/* ── GLOBAL FEED TAB ── */}
+      {/* ── FEED TAB ── */}
       {tab === "feed" && (
         <>
-          {/* Who's online row */}
+          {/* Who's online row — friends only */}
           {onlineMembers.length > 0 && (
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.35)", letterSpacing:"0.07em", marginBottom:10 }}>
@@ -776,7 +782,6 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
                           display:"flex", alignItems:"center", justifyContent:"center",
                           fontSize:26, border:`2px solid ${isYou ? "#FDCB6E" : "#55EFC4"}`
                         }}>{m.avatar}</div>
-                        {/* Green online dot */}
                         <div style={{
                           position:"absolute", bottom:1, right:1,
                           width:12, height:12, borderRadius:"50%",
@@ -797,21 +802,25 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
           <Card style={{ marginBottom:12, background:"rgba(108,99,255,0.08)", border:"1px solid rgba(108,99,255,0.2)" }}>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
               <div style={{ fontSize:28, flexShrink:0 }}>{profile.avatar}</div>
-              <Input value={text} onChange={setText} placeholder="Share with everyone… 🎉"
+              <Input value={text} onChange={setText} placeholder="Share with your friends… 🎉"
                 onKeyDown={e => e.key === "Enter" && post()}
                 style={{ flex:1, background:"rgba(255,255,255,0.04)", fontSize:13 }} />
               <Btn color="#6C63FF" onClick={post} style={{ flexShrink:0 }}>Post</Btn>
             </div>
           </Card>
 
-          {/* Feed */}
-          {feed.length === 0 && (
+          {/* Friends feed */}
+          {friendsFeed.length === 0 && (
             <div style={{ textAlign:"center", padding:"48px 0", color:"rgba(255,255,255,0.2)" }}>
-              <div style={{ fontSize:40, marginBottom:8 }}>🌍</div>
-              <div style={{ fontSize:14 }}>Nothing yet — complete a task to be the first!</div>
+              <div style={{ fontSize:40, marginBottom:8 }}>👥</div>
+              <div style={{ fontSize:14 }}>
+                {accepted.length === 0
+                  ? "Add friends to see their activity here!"
+                  : "Nothing yet — complete a task to get things going!"}
+              </div>
             </div>
           )}
-          {feed.map(p => (
+          {friendsFeed.map(p => (
             <FeedCard key={p.id} post={p} uid={uid} profile={profile}
               onLike={() => onLike(p.id, !p.likes?.includes(uid))}
               onComment={(c) => onComment(roomId, p.id, c)}
@@ -843,7 +852,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
               )}
             </div>
 
-            {/* Search results — by name */}
+            {/* Search results */}
             {searchRes.length > 0 && (
               <div style={{ marginBottom:10, borderRadius:10, overflow:"hidden", border:"1px solid rgba(255,255,255,0.08)" }}>
                 {searchRes.map((u, i) => (
@@ -883,8 +892,6 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
                 <div style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#A29BFE" }}>searching…</div>
               )}
             </div>
-
-            {/* Email search results */}
             {emailRes.length > 0 && (
               <div style={{ marginBottom:10, borderRadius:10, overflow:"hidden", border:"1px solid rgba(255,255,255,0.08)" }}>
                 {emailRes.map((u, i) => (
@@ -894,9 +901,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
                       <div style={{ fontWeight:600, fontSize:13 }}>{u.name}</div>
                       <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Level {u.xp ? Math.floor(u.xp/100)+1 : 1}</div>
                     </div>
-                    <Btn small color="#6C63FF" onClick={() => { handleSendRequest(u.uid); setEmailQuery(""); setEmailRes([]); }}>
-                      + Add
-                    </Btn>
+                    <Btn small color="#6C63FF" onClick={() => { handleSendRequest(u.uid); setEmailQuery(""); setEmailRes([]); }}>+ Add</Btn>
                   </div>
                 ))}
               </div>
@@ -982,7 +987,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
             <div style={{ textAlign:"center", padding:"48px 0", color:"rgba(255,255,255,0.2)" }}>
               <div style={{ fontSize:40, marginBottom:8 }}>👥</div>
               <div>No friends yet</div>
-              <div style={{ fontSize:12, marginTop:6 }}>Go to 🌍 Global, tap someone's avatar to add them!</div>
+              <div style={{ fontSize:12, marginTop:6 }}>Search by name or email above to add people!</div>
             </div>
           )}
 
@@ -1075,7 +1080,7 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
       {/* Header */}
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0, flexShrink:0 }}>
-          <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, border:"2px solid rgba(108,99,255,0.4)" }}>{f.avatar}</div>
+          <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, ...getFrameStyle(friendData || f) }}>{f.avatar}</div>
         </button>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -1432,7 +1437,7 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
   return (
     <div className="fadeUp">
       {/* Profile card */}
-      <Card style={{ marginBottom:16, textAlign:"center", background:"linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" }}>
+      <Card style={{ marginBottom:16, textAlign:"center", ...getBannerStyle(profile) }}>
         {editMode ? (
           <>
             <div style={{ fontSize:56, marginBottom:12 }}>{editAvatar}</div>
@@ -1451,11 +1456,11 @@ export function ProfilePage({ profile, updateProfile, tasks, habits, moodLog, on
         ) : (
           <>
             {profile.photoURL
-              ? <img src={profile.photoURL} alt="" style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 8px", display:"block", border:"3px solid rgba(108,99,255,0.4)" }} />
-              : <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 8px", border:"3px solid rgba(108,99,255,0.4)" }}>{profile.avatar}</div>
+              ? <img src={profile.photoURL} alt="" style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 8px", display:"block", ...getFrameStyle(profile) }} />
+              : <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 8px", ...getFrameStyle(profile) }}>{profile.avatar}</div>
             }
             <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, marginBottom:2 }}>{profile.name}</div>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}</div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}{getActiveTitle(profile) ? ` · ${getActiveTitle(profile)}` : ""}</div>
             <div style={{ display:"flex", justifyContent:"center", gap:12, marginBottom:10, fontSize:13 }}>
               <span style={{ color:"#FDCB6E", fontWeight:700 }}>{profile.xp||0} XP</span>
               <span style={{ color:"#FDCB6E", fontWeight:700 }}>🪙 {profile.gold||0}</span>
@@ -1603,14 +1608,36 @@ function RewardsTab({ uid, profile, rewards, addReward, redeemReward, deleteRewa
   );
 }
 
+/* ─── Cosmetic helpers ─────────────────────────────────────────────────────── */
+export function getFrameStyle(profile) {
+  const f = profile?.activeFrame;
+  if (f === "frame_1") return { border:"3px solid #FDCB6E", boxShadow:"0 0 10px rgba(253,203,110,0.5)" };
+  if (f === "frame_2") return { border:"3px solid transparent", backgroundClip:"padding-box", boxShadow:"0 0 14px rgba(108,99,255,0.8), 0 0 28px rgba(162,155,254,0.4)", outline:"2px solid #A29BFE" };
+  return { border:"3px solid rgba(108,99,255,0.4)" };
+}
+
+export function getBannerStyle(profile) {
+  const b = profile?.activeBanner;
+  if (b === "banner_1") return { background:"linear-gradient(135deg,rgba(255,107,107,0.25),rgba(225,112,85,0.15))", borderBottom:"2px solid rgba(255,107,107,0.4)" };
+  if (b === "banner_2") return { background:"linear-gradient(135deg,rgba(108,99,255,0.25),rgba(162,155,254,0.1))", borderBottom:"2px solid rgba(108,99,255,0.5)" };
+  return { background:"linear-gradient(135deg,rgba(108,99,255,0.1),rgba(253,203,110,0.05))" };
+}
+
+export function getActiveTitle(profile) {
+  const t = profile?.activeTitle;
+  if (t === "title_1") return "🦉 Night Owl";
+  if (t === "title_2") return "🎯 Focus Master";
+  return null;
+}
+
 /* ─── Shop Tab ────────────────────────────────────────────────────────────── */
 function ShopTab({ profile, updateProfile, lvl }) {
   const COSMETICS = [
     { id:"shield_1",  name:"Streak Shield",        desc:"Protect your streak once",     cost:30,  icon:"🛡️", type:"shield"  },
     { id:"frame_1",   name:"Golden Frame",          desc:"Gold avatar border",           cost:50,  icon:"🖼️", type:"frame"   },
-    { id:"frame_2",   name:"Cosmic Frame",          desc:"Animated cosmic border",       cost:120, icon:"🌌", type:"frame", minLevel:7 },
-    { id:"banner_1",  name:"Flame Banner",          desc:"Red flame squad banner",       cost:75,  icon:"🔥", type:"banner"  },
-    { id:"banner_2",  name:"Galaxy Banner",         desc:"Purple galaxy squad banner",   cost:150, icon:"🪐", type:"banner", minLevel:9 },
+    { id:"frame_2",   name:"Cosmic Frame",          desc:"Glowing cosmic border",        cost:120, icon:"🌌", type:"frame",  minLevel:7 },
+    { id:"banner_1",  name:"Flame Banner",          desc:"Red flame profile banner",     cost:75,  icon:"🔥", type:"banner"  },
+    { id:"banner_2",  name:"Galaxy Banner",         desc:"Purple galaxy profile banner", cost:150, icon:"🪐", type:"banner", minLevel:9 },
     { id:"title_1",   name:"Night Owl title",       desc:"Shown on your profile",        cost:40,  icon:"🦉", type:"title"   },
     { id:"title_2",   name:"Focus Master title",    desc:"Shown on your profile",        cost:80,  icon:"🎯", type:"title"   },
   ];
@@ -1622,29 +1649,48 @@ function ShopTab({ profile, updateProfile, lvl }) {
     await updateProfile({ gold: (profile.gold||0) - item.cost, ownedCosmetics: [...owned, item.id] });
   }
 
+  async function equip(item) {
+    if (item.type === "frame")  await updateProfile({ activeFrame:  item.id });
+    if (item.type === "banner") await updateProfile({ activeBanner: item.id });
+    if (item.type === "title")  await updateProfile({ activeTitle:  item.id });
+  }
+
+  async function unequip(item) {
+    if (item.type === "frame")  await updateProfile({ activeFrame:  null });
+    if (item.type === "banner") await updateProfile({ activeBanner: null });
+    if (item.type === "title")  await updateProfile({ activeTitle:  null });
+  }
+
   return (
     <>
       <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)", marginBottom:12 }}>Spend your gold on cosmetics and power-ups 🪙</div>
       {COSMETICS.map(item => {
-        const owned    = (profile.ownedCosmetics||[]).includes(item.id);
-        const locked   = item.minLevel && lvl < item.minLevel;
-        const canAfford= (profile.gold||0) >= item.cost;
+        const owned     = (profile.ownedCosmetics||[]).includes(item.id);
+        const locked    = item.minLevel && lvl < item.minLevel;
+        const canAfford = (profile.gold||0) >= item.cost;
+        const activeKey = item.type === "frame" ? "activeFrame" : item.type === "banner" ? "activeBanner" : "activeTitle";
+        const isEquipped = profile?.[activeKey] === item.id;
+        const isEquippable = ["frame","banner","title"].includes(item.type);
         return (
-          <Card key={item.id} style={{ marginBottom:10, opacity:locked?0.5:1 }}>
+          <Card key={item.id} style={{ marginBottom:10, opacity:locked?0.5:1, borderLeft: isEquipped ? "3px solid #55EFC4" : undefined }}>
             <div style={{ display:"flex", alignItems:"center", gap:12 }}>
               <div style={{ fontSize:32 }}>{item.icon}</div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:600, fontSize:14 }}>{item.name}</div>
+                <div style={{ fontWeight:600, fontSize:14 }}>{item.name} {isEquipped && <span style={{ fontSize:10, color:"#55EFC4", fontWeight:700 }}>● ACTIVE</span>}</div>
                 <div style={{ fontSize:12, color:"rgba(255,255,255,0.35)" }}>{item.desc}</div>
                 {locked && <div style={{ fontSize:11, color:"#FDCB6E", marginTop:2 }}>Unlocks at Level {item.minLevel}</div>}
               </div>
-              <div style={{ textAlign:"right" }}>
-                {owned
-                  ? <div style={{ fontSize:13, color:"#55EFC4", fontWeight:700 }}>Owned ✓</div>
-                  : locked
-                  ? <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>🔒</div>
-                  : <Btn small color={canAfford?"#FDCB6E":"rgba(255,255,255,0.1)"} style={{ color:canAfford?"#0B0D17":"rgba(255,255,255,0.3)" }} onClick={() => buy(item)} disabled={!canAfford}>{item.cost}🪙</Btn>
-                }
+              <div style={{ display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end" }}>
+                {!owned && !locked && (
+                  <Btn small color={canAfford?"#FDCB6E":"rgba(255,255,255,0.1)"} style={{ color:canAfford?"#0B0D17":"rgba(255,255,255,0.3)" }} onClick={() => buy(item)} disabled={!canAfford}>{item.cost}🪙</Btn>
+                )}
+                {locked && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)" }}>🔒</div>}
+                {owned && isEquippable && (
+                  isEquipped
+                    ? <Btn small ghost color="#55EFC4" onClick={() => unequip(item)}>Unequip</Btn>
+                    : <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => equip(item)}>Equip</Btn>
+                )}
+                {owned && !isEquippable && <div style={{ fontSize:13, color:"#55EFC4", fontWeight:700 }}>Owned ✓</div>}
               </div>
             </div>
           </Card>
@@ -1714,10 +1760,10 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
       <div onClick={e => e.stopPropagation()} style={{ width:"100%", maxWidth:480, background:"#0F1120", borderRadius:"20px 20px 0 0", padding:"24px 20px 48px", maxHeight:"90vh", overflowY:"auto" }}>
 
         {/* Header */}
-        <div style={{ textAlign:"center", marginBottom:20 }}>
-          <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", border:"3px solid rgba(108,99,255,0.4)" }}>{targetProfile.avatar}</div>
+        <div style={{ textAlign:"center", marginBottom:20, borderRadius:14, padding:"16px 0 8px", ...getBannerStyle(targetProfile) }}>
+          <div style={{ width:72, height:72, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 10px", ...getFrameStyle(targetProfile) }}>{targetProfile.avatar}</div>
           <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22 }}>{targetProfile.name}</div>
-          <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}</div>
+          <div style={{ fontSize:12, color:"rgba(255,255,255,0.4)", marginTop:2 }}>Level {lvl} · {LEVEL_NAMES[lvl-1]}{getActiveTitle(targetProfile) ? ` · ${getActiveTitle(targetProfile)}` : ""}</div>
           <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:8, fontSize:13 }}>
             <span style={{ color:"#FDCB6E", fontWeight:700 }}>{targetProfile.xp||0} XP</span>
             <span style={{ color:sColor, fontWeight:700 }}>🔥 {targetProfile.streak||0}</span>
