@@ -8,8 +8,9 @@ import { TopBar, BottomNav } from "./components/Nav";
 import { XPToast, Confetti } from "./components/UI";
 import { HomePage, TasksPage, HabitsPage, aiAuditTask } from "./components/Pages";
 import { FocusPage, SocialPage, ProfilePage, ProfileViewer } from "./components/MorePages";
+import { ConfirmModal, AdminPanel } from "./components/Pages";
 import { SquadsPage }        from "./components/SquadsPage";
-import { getLevel, getLevelUnlocks, LEVEL_NAMES } from "./utils";
+import { getLevel, getLevelUnlocks, LEVEL_NAMES, today } from "./utils";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -59,6 +60,8 @@ export default function App() {
   const [seeded,      setSeeded]      = useState(false);
   const [viewProfile, setViewProfile] = useState(null);
   const [toast,       setToast]       = useState(null);
+  const [confirm,     setConfirm]     = useState(null); // { type, item }
+  const [showAdmin,   setShowAdmin]   = useState(false);
 
   // Map taskId → feedPostId so we can delete the post when task is un-completed
   const taskFeedPosts = useRef({});
@@ -177,6 +180,17 @@ export default function App() {
     await feedPost(`completed habit: "${habit.name}" 🔥 (${result} day streak!)`, "habit");
   }
 
+  // Confirm-gate: tasks & habits require confirmation before completing
+  function requestComplete(task) {
+    if (task.done) { handleCompleteTask(task); return; } // undo = no confirm needed
+    setConfirm({ type: "task", item: task });
+  }
+  function requestCheckHabit(habit) {
+    const doneToday = habit.log?.includes(today());
+    if (doneToday) { handleCheckHabit(habit); return; } // undo = no confirm needed
+    setConfirm({ type: "habit", item: habit });
+  }
+
   async function handleMood({ mood, energy, anxiety, focus }) {
     await logMood(uid, { mood, energy, anxiety, focus });
     const extras = [
@@ -194,7 +208,7 @@ export default function App() {
 
   async function handleCreate(data) {
     await updateProfile(data);
-    await postToFeed(roomId, { userId: uid, userName: data.name, userAvatar: data.avatar, text: "just joined FocusFlow! 👋", type: "join" });
+    await postToFeed(roomId, { userId: uid, userName: data.name, userAvatar: data.avatar, text: "just joined Temper Ascension! 👋", type: "join" });
     await joinRoom(roomId, { ...profile, ...data });
   }
 
@@ -251,18 +265,18 @@ export default function App() {
         />
       )}
 
-      <TopBar profile={profile} page={page} />
+      <TopBar profile={profile} page={page} onAdminTrigger={() => setShowAdmin(true)} />
 
       <div style={{ flex:1, padding:"16px 16px 90px", overflowY:"auto" }}>
         {page === "home" && (
           <HomePage profile={profile} tasks={tasks} habits={habits} moodLog={moodLog}
-            onMood={handleMood} onCheckHabit={handleCheckHabit}
-            onCompleteTask={handleCompleteTask} setPage={setPage} />
+            onMood={handleMood} onCheckHabit={requestCheckHabit}
+            onCompleteTask={requestComplete} setPage={setPage} />
         )}
         {page === "tasks" && (
           <TasksPage
             tasks={tasks} addTask={addTask}
-            toggleTask={(id, done) => { const t = tasks.find(t => t.id === id); if (t) handleCompleteTask(t); }}
+            toggleTask={(id, done) => { const t = tasks.find(t => t.id === id); if (t) requestComplete(t); }}
             deleteTask={deleteTask} toggleTaskPrivacy={toggleTaskPrivacy}
             addSubtask={addSubtask} setSubtasks={setSubtasks} toggleSubtask={toggleSubtask} deleteSubtask={deleteSubtask}
             friends={friends} uid={uid}
@@ -277,7 +291,7 @@ export default function App() {
           />
         )}
         {page === "habits" && (
-          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={handleCheckHabit}
+          <HabitsPage habits={habits} addHabit={addHabit} checkHabit={requestCheckHabit}
             deleteHabit={deleteHabit} toggleHabitPrivacy={toggleHabitPrivacy} />
         )}
         {page === "focus"   && <FocusPage onComplete={handleFocusComplete} profile={profile} uid={uid} />}
@@ -313,6 +327,22 @@ export default function App() {
       </div>
 
       <BottomNav page={page} setPage={setPage} />
+
+      {/* Confirm modal — task & habit completion */}
+      <ConfirmModal
+        type={confirm?.type} item={confirm?.item}
+        onConfirm={() => {
+          if (confirm.type === "task")  handleCompleteTask(confirm.item);
+          else                          handleCheckHabit(confirm.item);
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+
+      {/* Admin panel */}
+      {showAdmin && (
+        <AdminPanel profile={profile} uid={uid} updateProfile={updateProfile} onClose={() => setShowAdmin(false)} />
+      )}
     </div>
   );
 }

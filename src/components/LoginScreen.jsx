@@ -15,7 +15,7 @@ export default function LoginScreen({ onLogin }) {
           background: "linear-gradient(135deg,#6C63FF,#FDCB6E)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
           marginBottom: 8
-        }}>FocusFlow</h1>
+        }}>Temper Ascension</h1>
         <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 15, marginBottom: 48, lineHeight: 1.5 }}>
           Your ADHD-friendly squad planner.<br />One account. Every device. 🚀
         </p>

@@ -1,7 +1,7 @@
 {
-  "short_name": "FocusFlow",
-  "name": "FocusFlow — ADHD Planner",
-  "description": "Your ADHD-friendly squad planner",
+  "short_name": "TempAsc",
+  "name": "Temper Ascension",
+  "description": "Forge yourself. Ascend.",
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#0B0D17",
@@ -9,7 +9,7 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://fav.farm/🧠",
+      "src": "https://fav.farm/⚔️",
       "sizes": "512x512",
       "type": "image/png"
     }

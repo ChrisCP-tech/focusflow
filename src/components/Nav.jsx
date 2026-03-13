@@ -1,11 +1,20 @@
 // src/components/Nav.jsx
 import { getLevel, xpProgress, LEVEL_NAMES } from "../utils";
 
-export function TopBar({ profile, page }) {
+export function TopBar({ profile, page, onAdminTrigger }) {
   if (!profile) return null;
   const lvl  = getLevel(profile.xp || 0);
   const prog = xpProgress(profile.xp || 0);
   const labels = { home:"Home", tasks:"Tasks", habits:"Habits", social:"Friends", focus:"Focus", profile:"Profile", squads:"Squads" };
+
+  // Triple-tap the app title to open admin panel
+  const tapCount = { current: 0, timer: null };
+  function handleTitleTap() {
+    tapCount.current += 1;
+    clearTimeout(tapCount.timer);
+    tapCount.timer = setTimeout(() => { tapCount.current = 0; }, 600);
+    if (tapCount.current >= 3) { tapCount.current = 0; onAdminTrigger?.(); }
+  }
 
   return (
     <div style={{
@@ -18,10 +27,11 @@ export function TopBar({ profile, page }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <div style={{
-            fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 19,
+            fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: 15,
             background: "linear-gradient(135deg,#6C63FF,#FDCB6E)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
-          }}>FocusFlow</div>
+            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+            cursor: "default", userSelect: "none"
+          }} onClick={handleTitleTap}>Temper Ascension</div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{labels[page] || ""}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

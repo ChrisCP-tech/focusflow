@@ -784,3 +784,190 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit, toggleHa
 }
 
 export { aiAuditTask, aiSuggestXP };
+
+/* ══════════════════════════ CONFIRM MODAL ══════════════════════════════════ */
+export function ConfirmModal({ type, item, onConfirm, onCancel }) {
+  if (!item) return null;
+  const isTask  = type === "task";
+  const label   = isTask ? item.title : item.name;
+  const xp      = isTask ? (item.xp || 20) : (10 + (item.streak || 0) * 2);
+  const gold    = isTask ? (item.gold || 10) : Math.min(5 + Math.floor((item.streak||0) * 1.5), 30);
+  const color   = isTask ? "#55EFC4" : (item.color || "#6C63FF");
+  const emoji   = isTask ? "✅" : (item.icon || "🌟");
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:10000,
+      background:"rgba(0,0,0,0.7)", backdropFilter:"blur(6px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24
+    }} onClick={onCancel}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:"#1A1D2E", border:"1px solid rgba(255,255,255,0.12)",
+        borderRadius:20, padding:28, width:"100%", maxWidth:340,
+        boxShadow:"0 24px 64px rgba(0,0,0,0.6)"
+      }}>
+        {/* Icon */}
+        <div style={{ fontSize:40, textAlign:"center", marginBottom:12 }}>{emoji}</div>
+
+        {/* Title */}
+        <div style={{ textAlign:"center", fontWeight:700, fontSize:16, marginBottom:4 }}>
+          {isTask ? "Complete task?" : "Log habit?"}
+        </div>
+        <div style={{ textAlign:"center", fontSize:13, color:"rgba(255,255,255,0.5)", marginBottom:20, wordBreak:"break-word" }}>
+          "{label}"
+        </div>
+
+        {/* Rewards preview */}
+        <div style={{ display:"flex", gap:10, justifyContent:"center", marginBottom:24 }}>
+          <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:12, padding:"8px 18px", textAlign:"center" }}>
+            <div style={{ fontSize:18, fontWeight:800, color:"#A29BFE" }}>+{xp}</div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>XP</div>
+          </div>
+          <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:12, padding:"8px 18px", textAlign:"center" }}>
+            <div style={{ fontSize:18, fontWeight:800, color:"#FDCB6E" }}>+{gold}🪙</div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>Gold</div>
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onCancel} style={{
+            flex:1, padding:"11px 0", borderRadius:12, fontSize:13, fontWeight:600,
+            background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
+            color:"rgba(255,255,255,0.5)", cursor:"pointer"
+          }}>Cancel</button>
+          <button onClick={onConfirm} style={{
+            flex:2, padding:"11px 0", borderRadius:12, fontSize:14, fontWeight:700,
+            background:`linear-gradient(135deg, ${color}, ${color}bb)`,
+            border:"none", color:"#0B0D17", cursor:"pointer"
+          }}>Confirm ✓</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════ ADMIN PANEL ════════════════════════════════════ */
+const ADMIN_UIDS = ["q0YDkGA7jAOF9vmSCiWMmfjzTyp1"]; // replace with your real Firebase UID
+
+export function AdminPanel({ profile, uid, updateProfile, onClose }) {
+  const [level,  setLevel]  = useState(profile?.level  || 1);
+  const [xp,     setXp]     = useState(profile?.xp     || 0);
+  const [gold,   setGold]   = useState(profile?.gold   || 0);
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
+
+  if (!ADMIN_UIDS.includes(uid)) return null;
+
+  async function save() {
+    setSaving(true);
+    await updateProfile({ level: Number(level), xp: Number(xp), gold: Number(gold) });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const fieldStyle = {
+    width:"100%", padding:"10px 14px", borderRadius:10, fontSize:14, fontWeight:600,
+    background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)",
+    color:"#E8E9F3", outline:"none", boxSizing:"border-box"
+  };
+  const labelStyle = { fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", letterSpacing:"0.06em", marginBottom:6, display:"block" };
+
+  return (
+    <div style={{
+      position:"fixed", inset:0, zIndex:10000,
+      background:"rgba(0,0,0,0.8)", backdropFilter:"blur(8px)",
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:"#1A1D2E", border:"2px solid #FF6B6B",
+        borderRadius:20, padding:28, width:"100%", maxWidth:340,
+        boxShadow:"0 24px 64px rgba(255,107,107,0.2)"
+      }}>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24 }}>
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:"#FF6B6B", letterSpacing:"0.1em" }}>⚙️ ADMIN PANEL</div>
+            <div style={{ fontSize:16, fontWeight:800, marginTop:2 }}>Dev Controls</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:20, cursor:"pointer" }}>✕</button>
+        </div>
+
+        {/* Current stats */}
+        <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+          {[["Level", profile?.level||1, "#A29BFE"], ["XP", profile?.xp||0, "#74B9FF"], ["Gold", profile?.gold||0, "#FDCB6E"]].map(([k,v,c]) => (
+            <div key={k} style={{ flex:1, background:"rgba(255,255,255,0.04)", borderRadius:10, padding:"8px 0", textAlign:"center" }}>
+              <div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>{k}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Inputs */}
+        <div style={{ display:"flex", flexDirection:"column", gap:14, marginBottom:20 }}>
+          <div>
+            <label style={labelStyle}>SET LEVEL (1–20)</label>
+            <input type="number" min="1" max="20" value={level}
+              onChange={e => setLevel(e.target.value)} style={fieldStyle} />
+            {/* Quick level buttons */}
+            <div style={{ display:"flex", gap:4, marginTop:8, flexWrap:"wrap" }}>
+              {[1,5,10,15,20].map(l => (
+                <button key={l} onClick={() => setLevel(l)} style={{
+                  padding:"4px 10px", borderRadius:8, fontSize:11, fontWeight:700, cursor:"pointer",
+                  background: Number(level)===l ? "#A29BFE22" : "rgba(255,255,255,0.05)",
+                  border:`1px solid ${Number(level)===l ? "#A29BFE" : "rgba(255,255,255,0.1)"}`,
+                  color: Number(level)===l ? "#A29BFE" : "rgba(255,255,255,0.4)"
+                }}>L{l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>SET XP</label>
+            <input type="number" min="0" value={xp}
+              onChange={e => setXp(e.target.value)} style={fieldStyle} />
+            <div style={{ display:"flex", gap:4, marginTop:8 }}>
+              {[0,500,1000,5000,10000].map(v => (
+                <button key={v} onClick={() => setXp(v)} style={{
+                  padding:"4px 8px", borderRadius:8, fontSize:10, fontWeight:700, cursor:"pointer",
+                  background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)",
+                  color:"rgba(255,255,255,0.4)"
+                }}>{v>=1000?`${v/1000}k`:v}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>SET GOLD 🪙</label>
+            <input type="number" min="0" value={gold}
+              onChange={e => setGold(e.target.value)} style={fieldStyle} />
+            <div style={{ display:"flex", gap:4, marginTop:8 }}>
+              {[0,100,500,1000,9999].map(v => (
+                <button key={v} onClick={() => setGold(v)} style={{
+                  padding:"4px 8px", borderRadius:8, fontSize:10, fontWeight:700, cursor:"pointer",
+                  background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)",
+                  color:"rgba(255,255,255,0.4)"
+                }}>{v>=1000?`${v/1000}k`:v}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Save button */}
+        <button onClick={save} disabled={saving} style={{
+          width:"100%", padding:"13px 0", borderRadius:12, fontSize:14, fontWeight:800,
+          background: saved ? "#55EFC4" : "linear-gradient(135deg,#FF6B6B,#E17055)",
+          border:"none", color: saved ? "#0B0D17" : "#fff", cursor:"pointer",
+          transition:"all 0.2s"
+        }}>
+          {saving ? "Saving…" : saved ? "✓ Saved!" : "Apply Changes"}
+        </button>
+
+        <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", textAlign:"center", marginTop:10 }}>
+          Admin-only · not visible to other users
+        </div>
+      </div>
+    </div>
+  );
+}

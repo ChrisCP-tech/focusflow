@@ -430,6 +430,23 @@ export async function searchUsers(queryStr, currentUid) {
   }
 }
 
+export async function searchUsersByEmail(emailStr, currentUid) {
+  if (!emailStr || emailStr.trim().length < 4) return [];
+  try {
+    const q = query(
+      collection(db, "users"),
+      where("email", "==", emailStr.trim().toLowerCase()),
+      limit(3)
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => ({ uid: d.id, ...d.data() }))
+      .filter(u => u.uid !== currentUid);
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function fetchUserProfile(uid) {
   const snap = await getDoc(doc(db, "users", uid));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;

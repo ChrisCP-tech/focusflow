@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
-import { fetchUserProfile, searchUsers } from "../hooks/useData";
+import { fetchUserProfile, searchUsers, searchUsersByEmail } from "../hooks/useData";
 import { collection, query, where, limit, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
@@ -635,6 +635,9 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
   const [searchQuery, setSearchQuery] = useState("");
   const [searchRes,   setSearchRes]   = useState([]);
   const [searching,   setSearching]   = useState(false);
+  const [emailQuery,  setEmailQuery]  = useState("");
+  const [emailRes,    setEmailRes]    = useState([]);
+  const [emailSearching, setEmailSearching] = useState(false);
 
   const pending        = (friends||[]).filter(f => f.status==="pending" && f.direction==="incoming");
   const accepted       = (friends||[]).filter(f => f.status==="accepted");
@@ -669,6 +672,17 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     const friendUids = new Set((friends||[]).map(f => f.uid));
     setSearchRes(results.filter(u => !friendUids.has(u.uid)));
     setSearching(false);
+  }
+
+  async function handleEmailSearch(q) {
+    setEmailQuery(q);
+    setEmailRes([]);
+    if (!q.includes("@") || q.trim().length < 5) return;
+    setEmailSearching(true);
+    const friendUids = new Set((friends||[]).map(f => f.uid));
+    const results = await searchUsersByEmail(q.trim(), uid);
+    setEmailRes(results.filter(u => !friendUids.has(u.uid)));
+    setEmailSearching(false);
   }
 
   const tabs = [
@@ -829,7 +843,7 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
               )}
             </div>
 
-            {/* Search results */}
+            {/* Search results — by name */}
             {searchRes.length > 0 && (
               <div style={{ marginBottom:10, borderRadius:10, overflow:"hidden", border:"1px solid rgba(255,255,255,0.08)" }}>
                 {searchRes.map((u, i) => (
@@ -848,6 +862,47 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
             )}
             {searchQuery.length >= 2 && !searching && searchRes.length === 0 && (
               <div style={{ fontSize:12, color:"rgba(255,255,255,0.25)", marginBottom:8, textAlign:"center", padding:"6px 0" }}>No users found for "{searchQuery}"</div>
+            )}
+
+            {/* Divider */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, margin:"10px 0" }}>
+              <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+              <span style={{ fontSize:11, color:"rgba(255,255,255,0.25)" }}>or search by email</span>
+              <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+            </div>
+
+            {/* Search by email */}
+            <div style={{ position:"relative", marginBottom:8 }}>
+              <Input
+                value={emailQuery}
+                onChange={handleEmailSearch}
+                placeholder="✉️ Enter their email…"
+                style={{ fontSize:13 }}
+              />
+              {emailSearching && (
+                <div style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#A29BFE" }}>searching…</div>
+              )}
+            </div>
+
+            {/* Email search results */}
+            {emailRes.length > 0 && (
+              <div style={{ marginBottom:10, borderRadius:10, overflow:"hidden", border:"1px solid rgba(255,255,255,0.08)" }}>
+                {emailRes.map((u, i) => (
+                  <div key={u.uid} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"rgba(108,99,255,0.05)", borderBottom: i < emailRes.length-1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                    <div style={{ width:36, height:36, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{u.avatar||"🦊"}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:600, fontSize:13 }}>{u.name}</div>
+                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Level {u.xp ? Math.floor(u.xp/100)+1 : 1}</div>
+                    </div>
+                    <Btn small color="#6C63FF" onClick={() => { handleSendRequest(u.uid); setEmailQuery(""); setEmailRes([]); }}>
+                      + Add
+                    </Btn>
+                  </div>
+                ))}
+              </div>
+            )}
+            {emailQuery.includes("@") && emailQuery.length >= 5 && !emailSearching && emailRes.length === 0 && (
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.25)", marginBottom:8, textAlign:"center", padding:"6px 0" }}>No account found with that email</div>
             )}
 
             {/* Divider */}
