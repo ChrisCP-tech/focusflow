@@ -368,7 +368,7 @@ export function useCollabTaskSync(uid, tasks) {
       );
     });
     return () => unsubs.forEach(u => u());
-  }, [uid, collabKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uid, collabKey]);
 }
 
 // When collab task member updates subtasks, write to their copy AND owner's original
