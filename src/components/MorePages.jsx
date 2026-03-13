@@ -592,11 +592,11 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
       .then(snap => { if (snap.exists()) setFriendData(snap.data()); })
       .catch(() => {});
 
-    // Live public tasks
+    // Live tasks — fetch all, filter public client-side (avoids index requirement)
     const unsubTasks = onSnapshot(
-      query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
+      collection(db, "users", f.uid, "tasks"),
       snap => {
-        const list = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id })).filter(t => t.isPublic === true);
         list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
         setTasks(list);
         setLoading(false);
@@ -604,10 +604,10 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
       () => { setError("Could not load tasks"); setLoading(false); }
     );
 
-    // Live public habits
+    // Live habits — fetch all, filter public client-side
     const unsubHabits = onSnapshot(
-      query(collection(db, "users", f.uid, "habits"), where("isPublic", "==", true), limit(20)),
-      snap => setHabits(snap.docs.map(d => ({ ...d.data(), id: d.id }))),
+      collection(db, "users", f.uid, "habits"),
+      snap => setHabits(snap.docs.map(d => ({ ...d.data(), id: d.id })).filter(h => h.isPublic === true)),
       () => setHabits([])
     );
 
@@ -1230,11 +1230,11 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
     setLoading(true);
     fetchUserProfile(targetUid).then(p => { setTargetProfile(p); setLoading(false); });
 
-    // Live public tasks
+    // Live public tasks — fetch all, filter client-side
     const unsubTasks = onSnapshot(
-      query(collection(db,"users",targetUid,"tasks"), where("isPublic","==",true), limit(15)),
+      collection(db,"users",targetUid,"tasks"),
       snap => {
-        const list = snap.docs.map(d=>({id:d.id,...d.data()}));
+        const list = snap.docs.map(d=>({id:d.id,...d.data()})).filter(t => t.isPublic === true);
         list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
         setTasks(list);
       },
@@ -1243,12 +1243,12 @@ export function ProfileViewer({ targetUid, currentUid, onClose, onSendFriendRequ
     return () => unsubTasks();
   }, [targetUid]);
 
-  // Habits in a separate effect so it loads independently of isFriend timing
+  // Habits — fetch all, filter public client-side
   useEffect(() => {
     if (!targetUid) return;
     const unsubHabits = onSnapshot(
-      query(collection(db,"users",targetUid,"habits"), where("isPublic","==",true), limit(15)),
-      snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()}))),
+      collection(db,"users",targetUid,"habits"),
+      snap => setHabits(snap.docs.map(d=>({id:d.id,...d.data()})).filter(h => h.isPublic === true)),
       () => setHabits([])
     );
     return () => unsubHabits();

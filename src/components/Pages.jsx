@@ -488,6 +488,8 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
   const subtasks = task.subtasks || [];
   const progress = task.progress || 0;
   const accepted = (friends||[]).filter(f => f.status === "accepted");
+  // Collab tasks accepted by this user — they can complete but not edit/delete
+  const isCollabAcceptor = task.isCollab === true;
 
   function handleSubtaskToggle(stId) {
     onToggleSubtask(stId);
@@ -582,17 +584,28 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
       {/* Expanded details — only when not done */}
       {expanded && !task.done && (
         <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+
+          {/* Collab notice for acceptors */}
+          {isCollabAcceptor && (
+            <div style={{ fontSize:11, color:"#A29BFE", background:"rgba(108,99,255,0.1)", borderRadius:8, padding:"6px 10px", marginBottom:10 }}>
+              👥 Shared task — you can complete it and toggle subtasks. Only the owner can edit or delete.
+            </div>
+          )}
+
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
             <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>
               SUBTASKS {subtasks.length > 0 && `(${subtasks.filter(s=>s.done).length}/${subtasks.length})`}
             </div>
-            <Btn small ghost color={task.aiBreakdownDone ? "#55EFC4" : "#A29BFE"}
-              onClick={onAIBreakdown}
-              disabled={aiBreaking || (task.aiBreakdownDone && subtasks.length > 0)}
-              title={task.aiBreakdownDone ? "Already generated — edit manually below" : "Let AI break this into subtasks"}
-            >
-              {aiBreaking ? "✨ Thinking…" : task.aiBreakdownDone && subtasks.length > 0 ? "✓ AI Done" : "✨ AI Breakdown"}
-            </Btn>
+            {/* AI breakdown — owner only */}
+            {!isCollabAcceptor && (
+              <Btn small ghost color={task.aiBreakdownDone ? "#55EFC4" : "#A29BFE"}
+                onClick={onAIBreakdown}
+                disabled={aiBreaking || (task.aiBreakdownDone && subtasks.length > 0)}
+                title={task.aiBreakdownDone ? "Already generated — edit manually below" : "Let AI break this into subtasks"}
+              >
+                {aiBreaking ? "✨ Thinking…" : task.aiBreakdownDone && subtasks.length > 0 ? "✓ AI Done" : "✨ AI Breakdown"}
+              </Btn>
+            )}
           </div>
           {subtasks.map(s => (
             <div key={s.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
@@ -605,25 +618,32 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
                 {s.done && <span style={{ color:"#0B0D17", fontSize:10, fontWeight:900 }}>✓</span>}
               </button>
               <span style={{ fontSize:13, flex:1, textDecoration:s.done?"line-through":"none", color:s.done?"rgba(255,255,255,0.35)":"#E8E9F3" }}>{s.title}</span>
-              <button onClick={() => onDeleteSubtask(s.id)} style={{
-                background:"none", border:"none", color:"rgba(255,255,255,0.15)",
-                cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, flexShrink:0
-              }} title="Remove subtask">✕</button>
+              {/* Delete subtask — owner only */}
+              {!isCollabAcceptor && (
+                <button onClick={() => onDeleteSubtask(s.id)} style={{
+                  background:"none", border:"none", color:"rgba(255,255,255,0.15)",
+                  cursor:"pointer", fontSize:14, padding:"0 2px", lineHeight:1, flexShrink:0
+                }} title="Remove subtask">✕</button>
+              )}
             </div>
           ))}
-          {/* Manual subtask input */}
-          <div style={{ display:"flex", gap:6, marginTop:10 }}>
-            <Input
-              value={newSub}
-              onChange={setNewSub}
-              onKeyDown={handleSubKeyDown}
-              placeholder="Add a subtask… (Enter to add)"
-              style={{ flex:1, fontSize:12, padding:"7px 10px" }}
-            />
-            <Btn small color="#6C63FF" onClick={submitSub}>+</Btn>
-          </div>
 
-          {accepted.length > 0 && (
+          {/* Manual subtask input — owner only */}
+          {!isCollabAcceptor && (
+            <div style={{ display:"flex", gap:6, marginTop:10 }}>
+              <Input
+                value={newSub}
+                onChange={setNewSub}
+                onKeyDown={handleSubKeyDown}
+                placeholder="Add a subtask… (Enter to add)"
+                style={{ flex:1, fontSize:12, padding:"7px 10px" }}
+              />
+              <Btn small color="#6C63FF" onClick={submitSub}>+</Btn>
+            </div>
+          )}
+
+          {/* Invite friends — owner only */}
+          {!isCollabAcceptor && accepted.length > 0 && (
             <div style={{ marginTop:10 }}>
               <button onClick={() => setShowInvite(v=>!v)} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
                 👥 Invite friends {showInvite?"▲":"▼"}
@@ -641,11 +661,19 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
           )}
 
           <div style={{ display:"flex", justifyContent:"space-between", marginTop:12 }}>
-            <button onClick={onPrivacyToggle} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
-              {task.isPublic!==false ? "🌐 Make private" : "🔒 Make public"}
-            </button>
-            <button onClick={onDelete} style={{ background:"none", border:"none", color:"#FF6B6B", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>Delete</button>
+            {/* Privacy toggle — owner only */}
+            {!isCollabAcceptor ? (
+              <button onClick={onPrivacyToggle} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>
+                {task.isPublic!==false ? "🌐 Make private" : "🔒 Make public"}
+              </button>
+            ) : <span />}
+            {/* Delete — owner only; acceptors see Leave instead */}
+            {isCollabAcceptor
+              ? <button onClick={onDelete} style={{ background:"none", border:"none", color:"rgba(255,255,255,0.4)", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>Leave shared task</button>
+              : <button onClick={onDelete} style={{ background:"none", border:"none", color:"#FF6B6B", fontSize:12, cursor:"pointer", padding:0, fontFamily:"inherit" }}>Delete</button>
+            }
           </div>
+
         </div>
       )}
     </Card>

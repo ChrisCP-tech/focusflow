@@ -31,7 +31,19 @@ export function useTasks(uid) {
 
   const toggleTask = useCallback(async (id, done) => {
     if (!uid) return;
-    await updateDoc(doc(db, "users", uid, "tasks", id), { done, completedAt: done ? new Date().toISOString() : null });
+    const ref = doc(db, "users", uid, "tasks", id);
+    await updateDoc(ref, { done, completedAt: done ? new Date().toISOString() : null });
+    // If this is a collab task accepted by this user, also sync to the owner's copy
+    const snap = await getDoc(ref).catch(() => null);
+    if (snap?.exists()) {
+      const data = snap.data();
+      if (data.isCollab && data.collabOwnerUid && data.collabTaskId) {
+        await updateDoc(
+          doc(db, "users", data.collabOwnerUid, "tasks", data.collabTaskId),
+          { done, completedAt: done ? new Date().toISOString() : null }
+        ).catch(e => console.warn("Collab done sync failed:", e.message));
+      }
+    }
   }, [uid]);
 
   const deleteTask = useCallback(async (id) => { if (uid) await deleteDoc(doc(db, "users", uid, "tasks", id)); }, [uid]);
