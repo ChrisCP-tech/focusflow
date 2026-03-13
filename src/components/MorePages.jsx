@@ -9,17 +9,19 @@ import { db } from "../firebase/config";
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 /* ══════════════════════════ FOCUS MUSIC ═══════════════════════════════════ */
 const MUSIC_CHANNELS = [
-  { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE" },
-  { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF" },
-  { id: "brown",     label: "Brown Noise", emoji: "🟫", color: "#B2876B" },
-  { id: "white",     label: "White Noise", emoji: "🤍", color: "#DFE6E9" },
-  { id: "forest",    label: "Forest",      emoji: "🌲", color: "#55EFC4" },
-  { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E" },
-  { id: "classical", label: "Classical",   emoji: "🎻", color: "#A8E6CF" },
-  { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF" },
-  { id: "campfire",  label: "Campfire",    emoji: "🔥", color: "#FF7675" },
-];
-function FocusMusic({ profile, uid }) {
+  { id: "rain",     label: "Rain",           emoji: "🌧️", color: "#74B9FF" },
+  { id: "forest",   label: "Forest",         emoji: "🌲", color: "#55EFC4" },
+  { id: "campfire", label: "Campfire",       emoji: "🔥", color: "#FF7675" },
+  { id: "ocean",    label: "Ocean",          emoji: "🌊", color: "#0984E3" },
+  { id: "thunder",  label: "Thunderstorm",   emoji: "⛈️", color: "#636E72" },
+  { id: "coffee",   label: "Coffee Shop",    emoji: "☕", color: "#FDCB6E" },
+  { id: "crickets", label: "Night Crickets", emoji: "🦗", color: "#00B894" },
+  { id: "wind",     label: "Wind",           emoji: "🌬️", color: "#B2BEC3" },
+  { id: "creek",    label: "Creek",          emoji: "💧", color: "#81ECEC" },
+  { id: "brown",    label: "Brown Noise",    emoji: "🟫", color: "#B2876B" },
+  { id: "white",    label: "White Noise",    emoji: "🤍", color: "#DFE6E9" },
+  { id: "ambient",  label: "Ambient",        emoji: "🌌", color: "#6C63FF" },
+];function FocusMusic({ profile, uid }) {
   const [playing,       setPlaying]       = useState(null);
   const [volume,        setVolume]        = useState(60);
   const [loading,       setLoading]       = useState(false);
@@ -39,17 +41,20 @@ function FocusMusic({ profile, uid }) {
   const uploadLimit = baseSlots + bonusSlots;           // max 7 at level 5+ premium
   const canUpload   = true;                             // everyone can upload
 
-  // Built-in sounds — self-hosted, never break
+  // All sounds self-hosted in /public/sounds/
   const AUDIO_SRCS = {
-    lofi:      "/sounds/lofi.mp3",
-    rain:      "/sounds/rain.mp3",
-    brown:     "/sounds/brown-noise.mp3",
-    white:     "/sounds/white-noise.mp3",
-    forest:    "/sounds/forest.mp3",
-    jazz:      "/sounds/jazz.mp3",
-    classical: "/sounds/classical.mp3",
-    ambient:   "/sounds/ambient.mp3",
-    campfire:  "/sounds/campfire.mp3",
+    rain:     "/sounds/rain.mp3",
+    forest:   "/sounds/forest.mp3",
+    campfire: "/sounds/campfire.mp3",
+    ocean:    "/sounds/ocean.mp3",
+    thunder:  "/sounds/thunder.mp3",
+    coffee:   "/sounds/coffee.mp3",
+    crickets: "/sounds/crickets.mp3",
+    wind:     "/sounds/wind.mp3",
+    creek:    "/sounds/creek.mp3",
+    brown:    "/sounds/brown-noise.mp3",
+    white:    "/sounds/white-noise.mp3",
+    ambient:  "/sounds/ambient.mp3",
   };
 
   // Load custom tracks from Firestore on mount
@@ -159,17 +164,7 @@ function FocusMusic({ profile, uid }) {
     }
   }
 
-  const builtInChannels = [
-    { id: "lofi",      label: "Lofi",        emoji: "🎧", color: "#A29BFE" },
-    { id: "rain",      label: "Rain",        emoji: "🌧️", color: "#74B9FF" },
-    { id: "brown",     label: "Brown Noise", emoji: "🟫", color: "#B2876B" },
-    { id: "white",     label: "White Noise", emoji: "🤍", color: "#DFE6E9" },
-    { id: "forest",    label: "Forest",      emoji: "🌲", color: "#55EFC4" },
-    { id: "jazz",      label: "Jazz",        emoji: "🎷", color: "#FDCB6E" },
-    { id: "classical", label: "Classical",   emoji: "🎻", color: "#A8E6CF" },
-    { id: "ambient",   label: "Ambient",     emoji: "🌌", color: "#6C63FF" },
-    { id: "campfire",  label: "Campfire",    emoji: "🔥", color: "#FF7675" },
-  ];
+  const builtInChannels = MUSIC_CHANNELS;
 
   // Custom tracks get a purple color + music note emoji
   const customChannels = customTracks.map(t => ({
