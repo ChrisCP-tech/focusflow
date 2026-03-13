@@ -755,7 +755,7 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit, toggleHa
                   {Array.from({length:7}).map((_,i) => {
                     const d = new Date(Date.now() - (6-i)*86400000).toISOString().slice(0,10);
                     const did = h.log?.includes(d);
-                    return <div key={i} style={{ width:16, height:16, borderRadius:4, background:did?h.color:"rgba(255,255,255,0.07)", opacity:did?1:1 }} />;
+                    return <div key={i} style={{ width:16, height:16, borderRadius:4, background:did?h.color:"rgba(255,255,255,0.07)" }} />;
                   })}
                 </div>
               </div>
@@ -765,9 +765,12 @@ export function HabitsPage({ habits, addHabit, checkHabit, deleteHabit, toggleHa
                   onClick={() => checkHabit(h)}>
                   {doneToday ? "Undo ↩" : "Log ✓"}
                 </Btn>
-                <button onClick={() => toggleHabitPrivacy(h.id, !h.isPublic)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, color:h.isPublic!==false?"#55EFC4":"rgba(255,255,255,0.3)", padding:0 }}>
-                  {h.isPublic!==false?"🌐":"🔒"}
-                </button>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <button onClick={() => toggleHabitPrivacy(h.id, !h.isPublic)} style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, color:h.isPublic!==false?"#55EFC4":"rgba(255,255,255,0.3)", padding:0 }}>
+                    {h.isPublic!==false?"🌐":"🔒"}
+                  </button>
+                  <button onClick={() => { if(window.confirm(`Delete "${h.name}"?`)) deleteHabit(h.id); }} style={{ background:"none", border:"none", cursor:"pointer", fontSize:13, color:"rgba(255,107,107,0.5)", padding:0, lineHeight:1 }} title="Delete habit">✕</button>
+                </div>
               </div>
             </div>
           </Card>

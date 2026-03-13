@@ -9,11 +9,12 @@ import { db } from "../firebase/config";
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
-  const [mode,     setMode]     = useState("solo");   // "solo" | "group"
-  const [selected, setSelected] = useState(1500);
-  const [left,     setLeft]     = useState(1500);
-  const [running,  setRunning]  = useState(false);
-  const [done,     setDone]     = useState(false);
+  const [mode,       setMode]       = useState("solo");
+  const [selected,   setSelected]   = useState(1500);
+  const [left,       setLeft]       = useState(1500);
+  const [running,    setRunning]    = useState(false);
+  const [done,       setDone]       = useState(false);
+  const [customMins, setCustomMins] = useState("");
 
   // Group focus state
   const [sessionId,    setSessionId]    = useState(null);
@@ -164,7 +165,7 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
       {/* ── SOLO MODE ── */}
       {mode === "solo" && !sessionId && (
         <>
-          <div style={{ display:"flex", gap:8, marginBottom:32 }}>
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
             {PRESETS.map(p => (
               <button key={p.s} onClick={() => pick(p.s)} style={{
                 padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:600, cursor:"pointer", border:"none",
@@ -172,6 +173,31 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
                 color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
               }}>{p.label}</button>
             ))}
+          </div>
+          {/* Custom timer input */}
+          <div style={{ display:"flex", gap:8, marginBottom:32, alignItems:"center" }}>
+            <input
+              type="number" min="1" max="180"
+              value={customMins}
+              onChange={e => setCustomMins(e.target.value)}
+              placeholder="Custom min"
+              style={{
+                width:100, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)",
+                borderRadius:20, padding:"8px 14px", color:"#E8E9F3", fontSize:13,
+                fontFamily:"inherit", outline:"none", textAlign:"center"
+              }}
+            />
+            <button
+              onClick={() => {
+                const m = parseInt(customMins);
+                if (m > 0 && m <= 180) { pick(m * 60); setCustomMins(""); }
+              }}
+              style={{
+                padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:600, cursor:"pointer",
+                border:"1px solid rgba(108,99,255,0.4)", background:"rgba(108,99,255,0.15)", color:"#A29BFE"
+              }}
+            >Set</button>
+          </div>
           </div>
           <div style={{ position:"relative", width:200, height:200, marginBottom:32 }}>
             <svg width="200" height="200" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
@@ -202,7 +228,7 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
       {/* ── GROUP MODE — lobby ── */}
       {mode === "group" && !sessionId && (
         <div style={{ width:"100%", maxWidth:360 }}>
-          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+          <div style={{ display:"flex", gap:8, marginBottom:10 }}>
             {PRESETS.map(p => (
               <button key={p.s} onClick={() => pick(p.s)} style={{
                 flex:1, padding:"8px 0", borderRadius:12, fontSize:12, fontWeight:600, cursor:"pointer", border:"none",
@@ -210,6 +236,12 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
                 color:selected===p.s?"#fff":"rgba(255,255,255,0.5)"
               }}>{p.label}</button>
             ))}
+          </div>
+          <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center" }}>
+            <input type="number" min="1" max="180" value={customMins} onChange={e => setCustomMins(e.target.value)} placeholder="Custom min"
+              style={{ flex:1, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:12, padding:"8px 10px", color:"#E8E9F3", fontSize:12, fontFamily:"inherit", outline:"none", textAlign:"center" }} />
+            <button onClick={() => { const m=parseInt(customMins); if(m>0&&m<=180){pick(m*60);setCustomMins("");} }}
+              style={{ padding:"8px 14px", borderRadius:12, fontSize:12, fontWeight:600, cursor:"pointer", border:"1px solid rgba(108,99,255,0.4)", background:"rgba(108,99,255,0.15)", color:"#A29BFE" }}>Set</button>
           </div>
           <Btn color="#6C63FF" style={{ width:"100%", marginBottom:12 }} onClick={createGroupSession}>
             ✨ Create Group Session
