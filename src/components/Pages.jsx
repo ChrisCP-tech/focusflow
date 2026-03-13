@@ -336,17 +336,16 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
   }
 
   async function handleAIBreakdown(task) {
-    // If cached result already exists don't re-run API
     if (task.aiBreakdownDone && (task.subtasks || []).length > 0) return;
-    // 10-second cooldown prevents accidental double-click double-spend
     const lastRun = aiCooldowns[task.id] || 0;
     if (Date.now() - lastRun < 10000) return;
 
     setAiBreakId(task.id);
     setAiCooldowns(prev => ({ ...prev, [task.id]: Date.now() }));
     const result = await aiBreakdownTask(task.title, task.desc);
-    if (result && result.length > 0) {
-      // One bulk write — no race condition from sequential getDoc/updateDoc calls
+    if (result?.__rateLimited) {
+      alert(`⚠️ Daily AI limit reached (5/day during beta). Resets at midnight PST!\nYou can still add subtasks manually below.`);
+    } else if (result && result.length > 0) {
       await setSubtasks(task.id, result.map(s => s.title), true);
     }
     setAiBreakId(null);
