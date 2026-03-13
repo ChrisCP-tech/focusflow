@@ -121,7 +121,7 @@ export default function App() {
   async function handleCompleteTask(task) {
     if (task.done) {
       // UNDO completion
-      await toggleTask(task.id, false);
+      await toggleTask(task.id, false, task);
       // Refund XP and gold
       const refundXP   = task.xp   || 20;
       const refundGold = task.gold  || 10;
@@ -149,7 +149,7 @@ export default function App() {
       showToast(`⚠️ ${audit.reason}. Reduced gold: ${adjustedGold}🪙`);
     }
 
-    await toggleTask(task.id, true);
+    await toggleTask(task.id, true, task);
     const isPrivate = task.isPublic === false;
 
     // Award XP — for private tasks use a generic label so title doesn't appear in feed

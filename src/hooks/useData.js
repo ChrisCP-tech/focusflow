@@ -29,20 +29,15 @@ export function useTasks(uid) {
     });
   }, [uid]);
 
-  const toggleTask = useCallback(async (id, done) => {
+  const toggleTask = useCallback(async (id, done, taskData) => {
     if (!uid) return;
-    const ref = doc(db, "users", uid, "tasks", id);
-    await updateDoc(ref, { done, completedAt: done ? new Date().toISOString() : null });
-    // If this is a collab task accepted by this user, also sync to the owner's copy
-    const snap = await getDoc(ref).catch(() => null);
-    if (snap?.exists()) {
-      const data = snap.data();
-      if (data.isCollab && data.collabOwnerUid && data.collabTaskId) {
-        await updateDoc(
-          doc(db, "users", data.collabOwnerUid, "tasks", data.collabTaskId),
-          { done, completedAt: done ? new Date().toISOString() : null }
-        ).catch(e => console.warn("Collab done sync failed:", e.message));
-      }
+    await updateDoc(doc(db, "users", uid, "tasks", id), { done, completedAt: done ? new Date().toISOString() : null });
+    // If this is a collab task, sync completion to the owner's original
+    if (taskData?.isCollab && taskData?.collabOwnerUid && taskData?.collabTaskId) {
+      await updateDoc(
+        doc(db, "users", taskData.collabOwnerUid, "tasks", taskData.collabTaskId),
+        { done, completedAt: done ? new Date().toISOString() : null }
+      ).catch(e => console.warn("Collab done sync failed:", e.message));
     }
   }, [uid]);
 
