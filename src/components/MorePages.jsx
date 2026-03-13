@@ -577,52 +577,60 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
   const [giftStatus,   setGiftStatus]   = useState(null);
   const [expanded,     setExpanded]     = useState(false);
   const [tasks,        setTasks]        = useState([]);
+  const [habits,       setHabits]       = useState([]);
   const [friendData,   setFriendData]   = useState(null);
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [tasksError,   setTasksError]   = useState(null);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState(null);
 
-  // Load friend's full profile + public tasks when expanded
   useEffect(() => {
-    if (!expanded) return;
-    setTasksLoading(true);
-    setTasksError(null);
+    if (!expanded || !f?.uid) return;
+    setLoading(true);
+    setError(null);
 
-    // Load profile for XP/streak/level
-    getDoc(doc(db, "users", f.uid)).then(snap => {
-      if (snap.exists()) setFriendData(snap.data());
-    }).catch(() => {});
+    // Load friend profile
+    getDoc(doc(db, "users", f.uid))
+      .then(snap => { if (snap.exists()) setFriendData(snap.data()); })
+      .catch(() => {});
 
     // Live public tasks
-    const unsub = onSnapshot(
+    const unsubTasks = onSnapshot(
       query(collection(db, "users", f.uid, "tasks"), where("isPublic", "==", true), limit(20)),
       snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const list = snap.docs.map(d => ({ ...d.data(), id: d.id }));
         list.sort((a, b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
         setTasks(list);
-        setTasksLoading(false);
+        setLoading(false);
       },
-      err => {
-        setTasksError("Could not load tasks");
-        setTasksLoading(false);
-      }
+      () => { setError("Could not load tasks"); setLoading(false); }
     );
-    return () => unsub();
-  }, [expanded, f.uid]);
+
+    // Live public habits
+    const unsubHabits = onSnapshot(
+      query(collection(db, "users", f.uid, "habits"), where("isPublic", "==", true), limit(20)),
+      snap => setHabits(snap.docs.map(d => ({ ...d.data(), id: d.id }))),
+      () => setHabits([])
+    );
+
+    return () => { unsubTasks(); unsubHabits(); };
+  }, [expanded, f?.uid]);
 
   async function sendGift() {
     const res = await onGift(giftAmt);
     setGiftStatus(res?.error ? `error:${res.error}` : "sent");
   }
 
+  const todayStr    = new Date().toISOString().slice(0, 10);
   const activeTasks = tasks.filter(t => !t.done);
   const doneTasks   = tasks.filter(t => t.done);
   const level       = friendData ? getLevel(friendData.xp || 0) : null;
   const xpPct       = friendData ? xpProgress(friendData.xp || 0) : 0;
-  const streak      = friendData?.streak || f.streak || 0;
+  const streak      = friendData?.streak || f?.streak || 0;
+
+  if (!f) return null;
 
   return (
     <Card style={{ marginBottom:10, border: expanded ? "1px solid rgba(108,99,255,0.3)" : undefined }}>
-      {/* Header row */}
+      {/* Header */}
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         <button onClick={onViewProfile} style={{ background:"none", border:"none", cursor:"pointer", padding:0, flexShrink:0 }}>
           <div style={{ width:44, height:44, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, border:"2px solid rgba(108,99,255,0.4)" }}>{f.avatar}</div>
@@ -632,15 +640,11 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
             <span style={{ fontWeight:700, fontSize:14, cursor:"pointer" }} onClick={onViewProfile}>{f.name}</span>
             {streak > 0 && <span style={{ fontSize:11, color:"#FF6B6B", fontWeight:700 }}>🔥{streak}</span>}
           </div>
-          {level && (
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>
-              Lv.{level} · {friendData?.xp||0} XP
-            </div>
-          )}
+          {level && <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>Lv.{level} · {friendData?.xp||0} XP</div>}
         </div>
         <button onClick={() => setExpanded(v=>!v)} style={{
           background: expanded ? "rgba(108,99,255,0.2)" : "rgba(255,255,255,0.05)",
-          border: "1px solid rgba(255,255,255,0.08)", borderRadius:10,
+          border:"1px solid rgba(255,255,255,0.08)", borderRadius:10,
           color:"rgba(255,255,255,0.6)", fontSize:12, fontWeight:600,
           cursor:"pointer", padding:"5px 10px", fontFamily:"inherit", flexShrink:0
         }}>
@@ -648,68 +652,60 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
         </button>
       </div>
 
-      {/* Expanded progress view */}
+      {/* Expanded */}
       {expanded && (
         <div style={{ marginTop:14, paddingTop:14, borderTop:"1px solid rgba(255,255,255,0.06)" }}>
 
-          {/* XP progress bar */}
+          {/* XP bar */}
           {friendData && (
             <div style={{ marginBottom:14 }}>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"rgba(255,255,255,0.4)", marginBottom:4 }}>
-                <span>Level {level} progress</span>
+                <span>Level {level} · {LEVEL_NAMES[(level||1)-1]}</span>
                 <span>{xpPct}%</span>
               </div>
               <div style={{ height:6, background:"rgba(255,255,255,0.06)", borderRadius:3, overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${xpPct}%`, background:"linear-gradient(90deg,#6C63FF,#A29BFE)", borderRadius:3, transition:"width 0.5s" }} />
+                <div style={{ height:"100%", width:`${xpPct}%`, background:"linear-gradient(90deg,#6C63FF,#A29BFE)", borderRadius:3 }} />
               </div>
               <div style={{ display:"flex", gap:14, marginTop:8 }}>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:"#FDCB6E" }}>{friendData.xp||0}</div>
-                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>XP</div>
-                </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:"#FF6B6B" }}>🔥{streak}</div>
-                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Streak</div>
-                </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:"#55EFC4" }}>{doneTasks.length}</div>
-                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Done</div>
-                </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:"#74B9FF" }}>{activeTasks.length}</div>
-                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Active</div>
-                </div>
+                {[
+                  { val:`${friendData.xp||0}`, label:"XP",     color:"#FDCB6E" },
+                  { val:`🔥${streak}`,          label:"Streak", color:"#FF6B6B" },
+                  { val:`${doneTasks.length}`,  label:"Done",   color:"#55EFC4" },
+                  { val:`${activeTasks.length}`,label:"Active", color:"#74B9FF" },
+                ].map(s => (
+                  <div key={s.label} style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:15, fontWeight:800, color:s.color }}>{s.val}</div>
+                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>{s.label}</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Active public tasks */}
-          <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>
-            ACTIVE TASKS
-          </div>
-          {tasksLoading && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", padding:"8px 0" }}>Loading…</div>}
-          {tasksError  && <div style={{ fontSize:11, color:"#FF6B6B" }}>{tasksError}</div>}
-          {!tasksLoading && !tasksError && activeTasks.length === 0 && (
+          {/* Tasks */}
+          <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>ACTIVE TASKS</div>
+          {loading && <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", padding:"8px 0" }}>Loading…</div>}
+          {error   && <div style={{ fontSize:11, color:"#FF6B6B", padding:"4px 0" }}>{error}</div>}
+          {!loading && !error && activeTasks.length === 0 && (
             <div style={{ fontSize:12, color:"rgba(255,255,255,0.2)", padding:"8px 0" }}>No active public tasks</div>
           )}
-          {activeTasks.map(t => {
-            const subtasks  = t.subtasks || [];
-            const subDone   = subtasks.filter(s=>s.done).length;
-            const subPct    = subtasks.length ? Math.round(subDone/subtasks.length*100) : 0;
-            const priorityColor = { high:"#FF6B6B", medium:"#FDCB6E", low:"#55EFC4" }[t.priority] || "#6C63FF";
+          {activeTasks.map((t, i) => {
+            const subs    = Array.isArray(t.subtasks) ? t.subtasks : [];
+            const subDone = subs.filter(s=>s.done).length;
+            const subPct  = subs.length ? Math.round(subDone/subs.length*100) : 0;
+            const pc      = { high:"#FF6B6B", medium:"#FDCB6E", low:"#55EFC4" }[t.priority] || "#6C63FF";
             return (
-              <div key={t.id} style={{ marginBottom:10, background:"rgba(255,255,255,0.03)", borderRadius:10, padding:"10px 12px", borderLeft:`3px solid ${priorityColor}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+              <div key={t.id || i} style={{ marginBottom:8, background:"rgba(255,255,255,0.03)", borderRadius:10, padding:"10px 12px", borderLeft:`3px solid ${pc}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:"#E8E9F3", marginBottom:2 }}>{t.title}</div>
-                    {t.desc && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginBottom:4 }}>{t.desc}</div>}
-                    {subtasks.length > 0 && (
+                    <div style={{ fontSize:13, fontWeight:600 }}>{t.title}</div>
+                    {t.desc && <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginTop:2 }}>{t.desc}</div>}
+                    {subs.length > 0 && (
                       <div style={{ marginTop:6 }}>
                         <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:"rgba(255,255,255,0.3)", marginBottom:3 }}>
-                          <span>{subDone}/{subtasks.length} subtasks</span>
-                          <span>{subPct}%</span>
+                          <span>{subDone}/{subs.length} subtasks</span><span>{subPct}%</span>
                         </div>
-                        <div style={{ height:4, background:"rgba(255,255,255,0.06)", borderRadius:2, overflow:"hidden" }}>
+                        <div style={{ height:4, background:"rgba(255,255,255,0.06)", borderRadius:2 }}>
                           <div style={{ height:"100%", width:`${subPct}%`, background:"linear-gradient(90deg,#6C63FF,#55EFC4)", borderRadius:2 }} />
                         </div>
                       </div>
@@ -724,30 +720,49 @@ function FriendCard({ friend: f, uid, profile, onRemove, onViewProfile, onGift }
             );
           })}
 
-          {/* Recently completed */}
+          {/* Recently done */}
           {doneTasks.length > 0 && (
-            <>
-              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, marginTop:4, letterSpacing:"0.05em" }}>
-                RECENTLY COMPLETED
-              </div>
-              {doneTasks.slice(0,3).map(t => (
-                <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
-                  <div style={{ width:16, height:16, borderRadius:4, background:"#55EFC4", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                    <span style={{ color:"#0B0D17", fontSize:10, fontWeight:900 }}>✓</span>
+            <div style={{ marginTop:4, marginBottom:10 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:6, letterSpacing:"0.05em" }}>RECENTLY DONE</div>
+              {doneTasks.slice(0,3).map((t, i) => (
+                <div key={t.id || i} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                  <div style={{ width:14, height:14, borderRadius:3, background:"#55EFC4", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <span style={{ color:"#0B0D17", fontSize:9, fontWeight:900 }}>✓</span>
                   </div>
                   <span style={{ fontSize:12, flex:1, textDecoration:"line-through", color:"rgba(255,255,255,0.35)" }}>{t.title}</span>
                   <span style={{ fontSize:10, color:"#55EFC4" }}>+{t.xp||20}XP</span>
                 </div>
               ))}
-            </>
+            </div>
           )}
 
-          {/* Gift + actions */}
-          <div style={{ display:"flex", gap:6, marginTop:12, flexWrap:"wrap" }}>
+          {/* Public Habits */}
+          {habits.length > 0 && (
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"rgba(255,255,255,0.4)", marginBottom:8, letterSpacing:"0.05em" }}>PUBLIC HABITS</div>
+              {habits.map((h, i) => {
+                const log       = Array.isArray(h.log) ? h.log : [];
+                const doneToday = log.includes(todayStr);
+                const streak    = (() => { let s=0; const d=new Date(); for(let x=0;x<30;x++){ const ds=new Date(d); ds.setDate(ds.getDate()-x); if(log.includes(ds.toISOString().slice(0,10))) s++; else break; } return s; })();
+                return (
+                  <div key={h.id || i} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", background:"rgba(255,255,255,0.03)", borderRadius:10, marginBottom:6, borderLeft:`3px solid ${doneToday?"#55EFC4":"rgba(255,255,255,0.08)"}` }}>
+                    <span style={{ fontSize:20 }}>{h.icon||"⚡"}</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:600 }}>{h.name}</div>
+                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)" }}>🔥 {streak} day streak</div>
+                    </div>
+                    <span style={{ fontSize:11, fontWeight:700, color:doneToday?"#55EFC4":"rgba(255,255,255,0.25)" }}>{doneToday?"✓ Done":"—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap" }}>
             <Btn small ghost color="#FDCB6E" onClick={() => setShowGift(v=>!v)}>🪙 Gift Gold</Btn>
             <Btn small ghost color="#FF6B6B" onClick={onRemove}>Remove Friend</Btn>
           </div>
-
           {showGift && (
             <div style={{ marginTop:10, display:"flex", gap:8, alignItems:"center" }}>
               <select value={giftAmt} onChange={e => setGiftAmt(Number(e.target.value))} style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"6px 8px", color:"#E8E9F3", fontSize:12, fontFamily:"inherit" }}>
