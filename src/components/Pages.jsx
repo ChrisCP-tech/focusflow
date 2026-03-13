@@ -351,9 +351,10 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
   const visible = tasks.filter(t => {
     if (filter === "active")  return !t.done;
     if (filter === "done")    return t.done;
-    if (filter === "public")  return t.isPublic !== false;
+    if (filter === "public")  return t.isPublic !== false && !t.isCollab;
     if (filter === "private") return t.isPublic === false;
-    return true;
+    if (filter === "shared")  return t.isCollab === true;
+    return true; // "all"
   });
 
   return (
@@ -444,13 +445,19 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
       )}
 
       <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:4, marginBottom:14 }}>
-        {["all","active","done","public","private"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{
-            padding:"5px 12px", borderRadius:16, fontSize:11, fontWeight:600, whiteSpace:"nowrap",
-            background:filter===f ? "#6C63FF" : "rgba(255,255,255,0.06)",
-            border:"none", color:filter===f ? "#fff" : "rgba(255,255,255,0.4)", cursor:"pointer"
-          }}>{f}</button>
-        ))}
+        {[["all","All"],["active","Active"],["done","Done"],["public","Public"],["private","Private"],["shared","👥 Shared"]].map(([f, label]) => {
+          const isShared = f === "shared";
+          const sharedCount = isShared ? tasks.filter(t => t.isCollab).length : 0;
+          return (
+            <button key={f} onClick={() => setFilter(f)} style={{
+              padding:"5px 12px", borderRadius:16, fontSize:11, fontWeight:600, whiteSpace:"nowrap",
+              background: filter===f ? "#6C63FF" : isShared && sharedCount > 0 ? "rgba(108,99,255,0.15)" : "rgba(255,255,255,0.06)",
+              border: isShared && sharedCount > 0 ? "1px solid rgba(108,99,255,0.4)" : "none",
+              color: filter===f ? "#fff" : isShared && sharedCount > 0 ? "#A29BFE" : "rgba(255,255,255,0.4)",
+              cursor:"pointer"
+            }}>{label}{isShared && sharedCount > 0 ? ` (${sharedCount})` : ""}</button>
+          );
+        })}
       </div>
 
       {visible.length === 0 && (

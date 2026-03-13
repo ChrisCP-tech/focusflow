@@ -340,30 +340,35 @@ export function useTaskInvites(uid) {
 }
 
 /* ─── Collab Task Live Sync ──────────────────────────────────────────────── */
-// Hook that mirrors subtask/progress updates between collab task owner and acceptor
+// Mirrors subtask/progress updates from owner → acceptor, but never overwrites done status
 export function useCollabTaskSync(uid, tasks) {
+  // Use a stable string key instead of the tasks array to avoid infinite re-renders
+  const collabKey = tasks
+    .filter(t => t.isCollab && t.collabOwnerUid && t.collabTaskId)
+    .map(t => t.id)
+    .join(",");
+
   useEffect(() => {
-    if (!uid || !tasks.length) return;
+    if (!uid || !collabKey) return;
     const collabTasks = tasks.filter(t => t.isCollab && t.collabOwnerUid && t.collabTaskId);
     const unsubs = collabTasks.map(t => {
-      // Listen to the owner's original task for live updates
       return onSnapshot(
         doc(db, "users", t.collabOwnerUid, "tasks", t.collabTaskId),
         snap => {
           if (!snap.exists()) return;
           const ownerData = snap.data();
-          // Mirror subtasks and progress to this user's collab copy
+          // Only sync subtasks/progress/title/desc — never touch done (acceptor controls that)
           updateDoc(doc(db, "users", uid, "tasks", t.id), {
             subtasks: ownerData.subtasks || [],
             progress: ownerData.progress || 0,
-            title: ownerData.title,
-            desc: ownerData.desc,
+            title: ownerData.title || t.title,
+            desc: ownerData.desc || "",
           }).catch(() => {});
         }
       );
     });
     return () => unsubs.forEach(u => u());
-  }, [uid, tasks]);
+  }, [uid, collabKey]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // When collab task member updates subtasks, write to their copy AND owner's original
