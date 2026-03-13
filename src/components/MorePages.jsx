@@ -22,11 +22,9 @@ function FocusMusic({ profile, uid }) {
 
   // Tier logic — everyone starts with 1 slot free
   const userLevel   = profile?.level || 1;
-  const isPremium   = profile?.isPremium || false;
-  const baseSlots   = userLevel >= 5 ? 2 : 1;          // level 5 unlocks slot 2
-  const bonusSlots  = isPremium ? 5 : 0;               // premium adds 5 more
-  const uploadLimit = baseSlots + bonusSlots;           // max 7 at level 5+ premium
-  const canUpload   = true;                             // everyone can upload
+  // Slots: 1 at L1, +1 at L5/10/15/20 → max 5
+  const uploadLimit = 1 + [5,10,15,20].filter(l => userLevel >= l).length;
+  const canUpload   = true;
 
   // Load custom tracks from Firestore on mount
   useEffect(() => {
@@ -84,7 +82,10 @@ function FocusMusic({ profile, uid }) {
     if (!file.type.startsWith("audio/")) { setUploadError("Please select an MP3 or audio file"); return; }
     if (file.size > 20 * 1024 * 1024) { setUploadError("File must be under 20MB"); return; }
     if (customTracks.length >= uploadLimit) {
-      const nextUnlock = userLevel < 5 ? "Reach Level 5 to unlock slot 2" : isPremium ? "Premium limit reached" : "Upgrade to Premium for up to 5 extra slots";
+      const nextFreeLevel = [5,10,15,20].find(l => l > userLevel);
+      const nextUnlock = nextFreeLevel
+        ? `Reach Level ${nextFreeLevel} to unlock another slot`
+        : "Max 5 slots reached (Level 20)";
       setUploadError(`Limit reached (${uploadLimit} slot${uploadLimit > 1 ? "s" : ""}) — ${nextUnlock}`);
       return;
     }
@@ -231,10 +232,13 @@ function FocusMusic({ profile, uid }) {
             {/* Upgrade hints */}
             {!uploading && (
               <div style={{ fontSize:10, color:"rgba(255,255,255,0.2)", textAlign:"center", marginTop:5 }}>
-                {customTracks.length >= uploadLimit && !isPremium
-                  ? userLevel < 5
-                    ? "⚡ Reach Level 5 for slot 2 · Premium unlocks 5 more"
-                    : "⚡ Upgrade to Premium for 5 extra slots"
+                {customTracks.length >= uploadLimit
+                  ? (() => {
+                      const nextFreeLevel = [5,10,15,20].find(l => l > userLevel);
+                      return nextFreeLevel
+                        ? `⚡ Reach Level ${nextFreeLevel} to unlock another slot`
+                        : "🏆 Max 5 slots reached — Level 20";
+                    })()
                   : "MP3 · M4A · WAV · max 20MB"}
               </div>
             )}
