@@ -155,7 +155,7 @@ function FocusMusic() {
   );
 }
 
-function FocusPage({ onComplete, profile, uid, roomMembers }) {
+export function FocusPage({ onComplete, profile, uid, roomMembers }) {
   const PRESETS = [{ label:"25 min",s:1500},{label:"45 min",s:2700},{label:"60 min",s:3600}];
   const [mode,       setMode]       = useState("solo");
   const [selected,   setSelected]   = useState(1500);
