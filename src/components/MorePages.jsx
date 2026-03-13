@@ -198,7 +198,6 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
               }}
             >Set</button>
           </div>
-          </div>
           <div style={{ position:"relative", width:200, height:200, marginBottom:32 }}>
             <svg width="200" height="200" style={{ position:"absolute", top:0, left:0, transform:"rotate(-90deg)" }}>
               <circle cx="100" cy="100" r="90" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
