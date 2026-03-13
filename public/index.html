@@ -11,8 +11,11 @@
   <title>FocusFlow 🧠</title>
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <style>
-    body { margin: 0; background: #0B0D17; }
+    body { margin: 0; background: #0B0D17; color-scheme: dark; }
     #root { min-height: 100vh; }
+    select, option { background: #1A1D2E !important; color: #E8E9F3 !important; }
+    select:focus { outline: 1px solid rgba(108,99,255,0.5); }
+    input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.5); }
   </style>
 </head>
 <body>

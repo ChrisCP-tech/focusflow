@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
-import { fetchUserProfile } from "../hooks/useData";
+import { fetchUserProfile, searchUsers } from "../hooks/useData";
 import { collection, query, where, limit, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
@@ -340,10 +340,13 @@ export function FocusPage({ onComplete, profile, uid, roomMembers }) {
 
 /* ═══════════════════════════════ SOCIAL PAGE ══════════════════════════════ */
 export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onComment, onDeletePost, uid, addTask, addHabit, friends, sendFriendRequest, acceptFriend, removeFriend, onViewProfile, giftGold, updateProfile, taskInvites, onAcceptInvite, onDeclineInvite }) {
-  const [tab,       setTab]       = useState("feed");
-  const [text,      setText]      = useState("");
-  const [targetUid, setTargetUid] = useState("");
-  const [reqStatus, setReqStatus] = useState(null);
+  const [tab,         setTab]         = useState("feed");
+  const [text,        setText]        = useState("");
+  const [targetUid,   setTargetUid]   = useState("");
+  const [reqStatus,   setReqStatus]   = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchRes,   setSearchRes]   = useState([]);
+  const [searching,   setSearching]   = useState(false);
 
   const pending        = (friends||[]).filter(f => f.status==="pending" && f.direction==="incoming");
   const accepted       = (friends||[]).filter(f => f.status==="accepted");
@@ -362,11 +365,22 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     setText("");
   }
 
-  async function handleSendRequest() {
+  async function handleSendRequest(toUid) {
     setReqStatus("loading");
-    const res = await sendFriendRequest(uid, profile, targetUid.trim());
+    const res = await sendFriendRequest(uid, profile, (toUid || targetUid).trim());
     setReqStatus(res?.error ? `error:${res.error}` : "sent");
-    if (!res?.error) setTargetUid("");
+    if (!res?.error) { setTargetUid(""); setSearchQuery(""); setSearchRes([]); }
+  }
+
+  async function handleSearch(q) {
+    setSearchQuery(q);
+    if (q.trim().length < 2) { setSearchRes([]); return; }
+    setSearching(true);
+    const results = await searchUsers(q.trim(), uid);
+    // Filter out existing friends
+    const friendUids = new Set((friends||[]).map(f => f.uid));
+    setSearchRes(results.filter(u => !friendUids.has(u.uid)));
+    setSearching(false);
   }
 
   const tabs = [
@@ -510,19 +524,73 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
       {/* ── FRIENDS TAB ── */}
       {tab === "friends" && (
         <>
-          {/* Add friend input */}
+          {/* Add friend — search or share link */}
           <Card style={{ marginBottom:14 }}>
-            <div style={{ fontSize:12, fontWeight:600, marginBottom:8, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em" }}>ADD FRIEND BY USER ID</div>
+            <div style={{ fontSize:12, fontWeight:700, marginBottom:10, color:"rgba(255,255,255,0.5)", letterSpacing:"0.05em" }}>ADD FRIENDS</div>
+
+            {/* Search by name */}
+            <div style={{ position:"relative", marginBottom:8 }}>
+              <Input
+                value={searchQuery}
+                onChange={handleSearch}
+                placeholder="🔍 Search by name…"
+                style={{ fontSize:13 }}
+              />
+              {searching && (
+                <div style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#A29BFE" }}>searching…</div>
+              )}
+            </div>
+
+            {/* Search results */}
+            {searchRes.length > 0 && (
+              <div style={{ marginBottom:10, borderRadius:10, overflow:"hidden", border:"1px solid rgba(255,255,255,0.08)" }}>
+                {searchRes.map((u, i) => (
+                  <div key={u.uid} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background: i%2===0 ? "rgba(255,255,255,0.03)" : "transparent", borderBottom: i < searchRes.length-1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                    <div style={{ width:36, height:36, borderRadius:"50%", background:"linear-gradient(135deg,#6C63FF,#A29BFE)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{u.avatar||"🦊"}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:600, fontSize:13 }}>{u.name}</div>
+                      <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>Level {u.xp ? Math.floor(u.xp/100)+1 : 1} · <span style={{ fontFamily:"monospace", color:"rgba(255,255,255,0.2)" }}>{u.uid.slice(0,8)}…</span></div>
+                    </div>
+                    <Btn small color="#6C63FF" onClick={() => handleSendRequest(u.uid)}>
+                      + Add
+                    </Btn>
+                  </div>
+                ))}
+              </div>
+            )}
+            {searchQuery.length >= 2 && !searching && searchRes.length === 0 && (
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.25)", marginBottom:8, textAlign:"center", padding:"6px 0" }}>No users found for "{searchQuery}"</div>
+            )}
+
+            {/* Divider */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, margin:"10px 0" }}>
+              <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+              <span style={{ fontSize:11, color:"rgba(255,255,255,0.25)" }}>or add by User ID</span>
+              <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
+            </div>
+
+            {/* Raw UID fallback */}
             <div style={{ display:"flex", gap:8 }}>
-              <Input value={targetUid} onChange={setTargetUid} placeholder="Paste their User ID…"
+              <Input value={targetUid} onChange={setTargetUid} placeholder="Paste User ID…"
                 onKeyDown={e => e.key==="Enter" && handleSendRequest()}
                 style={{ flex:1, fontSize:12 }} />
-              <Btn small color="#6C63FF" onClick={handleSendRequest} disabled={reqStatus==="loading"}>
+              <Btn small color="#6C63FF" onClick={() => handleSendRequest()} disabled={reqStatus==="loading"}>
                 {reqStatus==="loading" ? "…" : "Add"}
               </Btn>
             </div>
             {reqStatus?.startsWith("error:") && <div style={{ fontSize:11, color:"#FF6B6B", marginTop:6 }}>{reqStatus.replace("error:","")}</div>}
             {reqStatus==="sent" && <div style={{ fontSize:11, color:"#55EFC4", marginTop:6 }}>Request sent! ✓</div>}
+
+            {/* Your shareable link */}
+            <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginBottom:6 }}>📤 Share your User ID so others can add you:</div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <div style={{ flex:1, background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:8, padding:"6px 10px", fontSize:11, color:"#A29BFE", fontFamily:"monospace", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{uid}</div>
+                <Btn small ghost color="#A29BFE" onClick={() => { navigator.clipboard?.writeText(uid); setReqStatus("copied"); setTimeout(()=>setReqStatus(null),2000); }}>
+                  {reqStatus==="copied" ? "✓ Copied" : "Copy"}
+                </Btn>
+              </div>
+            </div>
           </Card>
 
           {/* Outgoing pending — requests YOU sent waiting on them */}

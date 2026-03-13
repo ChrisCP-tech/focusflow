@@ -408,6 +408,28 @@ export function useGold(uid) {
 }
 
 /* ─── Fetch any user's profile ───────────────────────────────────────────── */
+/* ─── Search users by name ───────────────────────────────────────────────── */
+export async function searchUsers(queryStr, currentUid) {
+  if (!queryStr || queryStr.trim().length < 2) return [];
+  try {
+    // Firestore doesn't support full-text search, so we fetch users
+    // whose name starts with the query (case-sensitive prefix match)
+    const q = query(
+      collection(db, "users"),
+      orderBy("name"),
+      where("name", ">=", queryStr),
+      where("name", "<=", queryStr + "\uf8ff"),
+      limit(8)
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => ({ uid: d.id, ...d.data() }))
+      .filter(u => u.uid !== currentUid);
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function fetchUserProfile(uid) {
   const snap = await getDoc(doc(db, "users", uid));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;

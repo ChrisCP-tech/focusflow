@@ -7,8 +7,12 @@ import { aiSuggestXP, aiBreakdownTask, aiAuditTask } from "../ai";
 
 
 const selectStyle = {
-  background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
-  borderRadius:8, padding:"8px 10px", color:"#E8E9F3", width:"100%", fontSize:13, fontFamily:"inherit"
+  background:"#1A1D2E", border:"1px solid rgba(255,255,255,0.15)",
+  borderRadius:8, padding:"8px 10px", color:"#E8E9F3", width:"100%", fontSize:13, fontFamily:"inherit",
+  WebkitAppearance:"none", MozAppearance:"none", appearance:"none",
+  backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.3)'/%3E%3C/svg%3E")`,
+  backgroundRepeat:"no-repeat", backgroundPosition:"right 10px center", paddingRight:28,
+  cursor:"pointer"
 };
 
 /* ═══════════════════════════════ MOOD CHECK-IN ════════════════════════════ */
