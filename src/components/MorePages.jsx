@@ -8,20 +8,7 @@ import { db } from "../firebase/config";
 
 /* ═══════════════════════════════ FOCUS PAGE ═══════════════════════════════ */
 /* ══════════════════════════ FOCUS MUSIC ═══════════════════════════════════ */
-const MUSIC_CHANNELS = [
-  { id: "rain",     label: "Rain",           emoji: "🌧️", color: "#74B9FF" },
-  { id: "forest",   label: "Forest",         emoji: "🌲", color: "#55EFC4" },
-  { id: "campfire", label: "Campfire",       emoji: "🔥", color: "#FF7675" },
-  { id: "ocean",    label: "Ocean",          emoji: "🌊", color: "#0984E3" },
-  { id: "thunder",  label: "Thunderstorm",   emoji: "⛈️", color: "#636E72" },
-  { id: "coffee",   label: "Coffee Shop",    emoji: "☕", color: "#FDCB6E" },
-  { id: "crickets", label: "Night Crickets", emoji: "🦗", color: "#00B894" },
-  { id: "wind",     label: "Wind",           emoji: "🌬️", color: "#B2BEC3" },
-  { id: "creek",    label: "Creek",          emoji: "💧", color: "#81ECEC" },
-  { id: "brown",    label: "Brown Noise",    emoji: "🟫", color: "#B2876B" },
-  { id: "white",    label: "White Noise",    emoji: "🤍", color: "#DFE6E9" },
-  { id: "ambient",  label: "Ambient",        emoji: "🌌", color: "#6C63FF" },
-];function FocusMusic({ profile, uid }) {
+function FocusMusic({ profile, uid }) {
   const [playing,       setPlaying]       = useState(null);
   const [volume,        setVolume]        = useState(60);
   const [loading,       setLoading]       = useState(false);
@@ -40,22 +27,6 @@ const MUSIC_CHANNELS = [
   const bonusSlots  = isPremium ? 5 : 0;               // premium adds 5 more
   const uploadLimit = baseSlots + bonusSlots;           // max 7 at level 5+ premium
   const canUpload   = true;                             // everyone can upload
-
-  // All sounds self-hosted in /public/sounds/
-  const AUDIO_SRCS = {
-    rain:     "/sounds/rain.mp3",
-    forest:   "/sounds/forest.mp3",
-    campfire: "/sounds/campfire.mp3",
-    ocean:    "/sounds/ocean.mp3",
-    thunder:  "/sounds/thunder.mp3",
-    coffee:   "/sounds/coffee.mp3",
-    crickets: "/sounds/crickets.mp3",
-    wind:     "/sounds/wind.mp3",
-    creek:    "/sounds/creek.mp3",
-    brown:    "/sounds/brown-noise.mp3",
-    white:    "/sounds/white-noise.mp3",
-    ambient:  "/sounds/ambient.mp3",
-  };
 
   // Load custom tracks from Firestore on mount
   useEffect(() => {
@@ -82,7 +53,7 @@ const MUSIC_CHANNELS = [
     } else {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setError(null); setLoading(true); setPlaying(ch);
-      const audio = new Audio(ch.src || AUDIO_SRCS[ch.id]);
+      const audio = new Audio(ch.src);
       audio.loop = true;
       audio.volume = volume / 100;
       audio.addEventListener("canplaythrough", () => setLoading(false));
@@ -164,14 +135,10 @@ const MUSIC_CHANNELS = [
     }
   }
 
-  const builtInChannels = MUSIC_CHANNELS;
-
-  // Custom tracks get a purple color + music note emoji
+  // Custom tracks
   const customChannels = customTracks.map(t => ({
     id: t.id, label: t.label, emoji: "🎵", color: "#E17055", src: t.url, isCustom: true,
   }));
-
-  const allChannels = [...builtInChannels, ...customChannels];
 
   return (
     <div style={{ width:"100%", maxWidth:420, marginTop:32 }}>
@@ -182,28 +149,6 @@ const MUSIC_CHANNELS = [
           🎵 FOCUS MUSIC
         </span>
         <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.07)" }} />
-      </div>
-
-      {/* Built-in channel buttons */}
-      <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", justifyContent:"center" }}>
-        {builtInChannels.map(ch => {
-          const active = playing?.id === ch.id;
-          return (
-            <button key={ch.id} onClick={() => toggle(ch)} style={{
-              display:"flex", alignItems:"center", gap:6,
-              padding:"8px 14px", borderRadius:20, fontSize:13, fontWeight:600,
-              cursor:"pointer", border:`1.5px solid ${active ? ch.color : "rgba(255,255,255,0.1)"}`,
-              background: active ? `${ch.color}22` : "rgba(255,255,255,0.04)",
-              color: active ? ch.color : "rgba(255,255,255,0.5)",
-              transition:"all 0.2s"
-            }}>
-              <span>{ch.emoji}</span>
-              <span>{ch.label}</span>
-              {active && !loading && <span style={{ fontSize:10, animation:"pulse 1.2s ease-in-out infinite" }}>▶</span>}
-              {active && loading  && <span style={{ fontSize:10, opacity:0.6 }}>…</span>}
-            </button>
-          );
-        })}
       </div>
 
       {/* Custom tracks */}
