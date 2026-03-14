@@ -48,7 +48,7 @@ export default function App() {
   const { members, joinRoom, updateMemberStats, pingPresence }                                                  = useSquadMembers(roomId);
   const { moodLog, logMood }                                                                      = useMoodLog(uid);
   const { friends, sendFriendRequest, acceptFriend, removeFriend, inviteFriendToTask }            = useFriends(uid);
-  const { invites: taskInvites, acceptInvite, declineInvite }                                     = useTaskInvites(uid);
+  const { invites: taskInvites, acceptInvite, declineInvite, removeCollabMember }                  = useTaskInvites(uid);
   const { rewards, addReward, redeemReward, deleteReward, giftGold }                              = useGold(uid);
 
   // Live sync collab tasks (tasks accepted from friend invites)
@@ -298,6 +298,7 @@ export default function App() {
             onAcceptInvite={(id) => acceptInvite(uid, id)}
             onDeclineInvite={(id) => declineInvite(uid, id)}
             onCollabSubtaskUpdate={(task, subtasks, progress) => pushCollabSubtaskUpdate(uid, task, subtasks, progress)}
+            onRemoveCollabMember={(ownerUid, taskId, memberUid) => removeCollabMember(ownerUid, taskId, memberUid)}
           />
         )}
         {page === "habits" && (

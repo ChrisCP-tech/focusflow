@@ -299,7 +299,7 @@ function MiniHabit({ habit, onCheck }) {
 }
 
 /* ═══════════════════════════════ TASKS PAGE ═══════════════════════════════ */
-export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask, friends, uid, onInviteFriend, taskInvites, onAcceptInvite, onDeclineInvite, onCollabSubtaskUpdate }) {
+export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask, friends, uid, onInviteFriend, taskInvites, onAcceptInvite, onDeclineInvite, onCollabSubtaskUpdate, onRemoveCollabMember }) {
   const [showForm,    setShowForm]    = useState(false);
   const [filter,      setFilter]      = useState("all");
   const [showInvites, setShowInvites] = useState(false);
@@ -484,13 +484,14 @@ export function TasksPage({ tasks, addTask, toggleTask, deleteTask, toggleTaskPr
           uid={uid}
           onInviteFriend={onInviteFriend}
           onCollabSubtaskUpdate={onCollabSubtaskUpdate}
+          onRemoveCollabMember={onRemoveCollabMember}
         />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onDeleteSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend, onCollabSubtaskUpdate }) {
+function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onDeleteSubtask, onToggleSubtask, onAIBreakdown, aiBreaking, friends, uid, onInviteFriend, onCollabSubtaskUpdate, onRemoveCollabMember }) {
   const [expanded,   setExpanded]   = useState(false);
   const [newSub,     setNewSub]     = useState("");
   const [showInvite, setShowInvite] = useState(false);
@@ -667,6 +668,23 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Current members — owner only */}
+          {!isCollabAcceptor && (task.collabMembers||[]).length > 0 && (
+            <div style={{ marginTop:10 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.4)", letterSpacing:"0.05em", marginBottom:6 }}>SHARED WITH</div>
+              {(task.collabMembers||[]).map(m => (
+                <div key={m.uid} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                  <span style={{ fontSize:18 }}>{m.avatar}</span>
+                  <span style={{ fontSize:13, flex:1, color:"#E8E9F3" }}>{m.name}</span>
+                  <button
+                    onClick={() => onRemoveCollabMember && onRemoveCollabMember(uid, task.id, m.uid)}
+                    style={{ background:"none", border:"none", color:"#FF6B6B", fontSize:12, cursor:"pointer", padding:"2px 6px", fontFamily:"inherit", borderRadius:6 }}
+                  >Remove</button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -848,7 +866,7 @@ export function ConfirmModal({ type, item, onConfirm, onCancel }) {
 }
 
 /* ══════════════════════════ ADMIN PANEL ════════════════════════════════════ */
-const ADMIN_UIDS = ["q0YDkGA7jAOF9vmSCiWMmfjzTyp1"]; // replace with your real Firebase UID
+const ADMIN_UIDS = ["YOUR_UID_HERE"]; // replace with your real Firebase UID
 
 export function AdminPanel({ profile, uid, updateProfile, onClose }) {
   const [level,  setLevel]  = useState(profile?.level  || 1);

@@ -330,13 +330,36 @@ export function useTaskInvites(uid) {
       done: false,
       createdAt: serverTimestamp(),
     });
+
+    // Add acceptor to owner's task collabMembers list
+    try {
+      const acceptorSnap = await getDoc(doc(db, "users", uid));
+      const acceptorData = acceptorSnap.exists() ? acceptorSnap.data() : {};
+      await updateDoc(doc(db, "users", inv.fromUid, "tasks", inv.taskId), {
+        collabMembers: arrayUnion({ uid, name: acceptorData.name || "Friend", avatar: acceptorData.avatar || "🦊" })
+      });
+    } catch (e) { console.warn("collabMembers update failed:", e.message); }
   }, []);
 
   const declineInvite = useCallback(async (uid, inviteId) => {
     await deleteDoc(doc(db, "users", uid, "taskInvites", inviteId));
   }, []);
 
-  return { invites, acceptInvite, declineInvite };
+  const removeCollabMember = useCallback(async (ownerUid, taskId, memberUid) => {
+    // Delete the collab copy from the member's tasks
+    try {
+      await deleteDoc(doc(db, "users", memberUid, "tasks", `collab_${ownerUid}_${taskId}`));
+    } catch (e) { console.warn("delete collab copy failed:", e.message); }
+    // Remove from owner's collabMembers array
+    const taskRef = doc(db, "users", ownerUid, "tasks", taskId);
+    const snap = await getDoc(taskRef);
+    if (!snap.exists()) return;
+    const members = snap.data().collabMembers || [];
+    const updated = members.filter(m => m.uid !== memberUid);
+    await updateDoc(taskRef, { collabMembers: updated });
+  }, []);
+
+  return { invites, acceptInvite, declineInvite, removeCollabMember };
 }
 
 /* ─── Collab Task Live Sync ──────────────────────────────────────────────── */
@@ -420,23 +443,6 @@ export async function searchUsers(queryStr, currentUid) {
       where("name", ">=", queryStr),
       where("name", "<=", queryStr + "\uf8ff"),
       limit(8)
-    );
-    const snap = await getDocs(q);
-    return snap.docs
-      .map(d => ({ uid: d.id, ...d.data() }))
-      .filter(u => u.uid !== currentUid);
-  } catch (e) {
-    return [];
-  }
-}
-
-export async function searchUsersByEmail(emailStr, currentUid) {
-  if (!emailStr || emailStr.trim().length < 4) return [];
-  try {
-    const q = query(
-      collection(db, "users"),
-      where("email", "==", emailStr.trim().toLowerCase()),
-      limit(3)
     );
     const snap = await getDocs(q);
     return snap.docs
