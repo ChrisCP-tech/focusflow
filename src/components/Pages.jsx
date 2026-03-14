@@ -188,16 +188,16 @@ function MoodCheckIn({ todayMood, onMood }) {
 }
 
 /* ═══════════════════════════════ HOME PAGE ════════════════════════════════ */
-export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit, onCompleteTask, setPage }) {
+export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit, onCheckHabitForDate, onCompleteTask, setPage }) {
   const todayStr   = today();
   const todayMood  = moodLog.find(m => m.date === todayStr);
   const doneTasks  = tasks.filter(t => t.done).length;
   const doneHabits = habits.filter(h => h.log?.includes(todayStr)).length;
   const topTasks   = tasks.filter(t => !t.done).slice(0,3);
-  const topHabits  = habits.filter(h => !h.log?.includes(todayStr)).slice(0,3);
   const level      = getLevel(profile.xp || 0);
   const sColor     = streakColor(level);
   const unlocks    = getLevelUnlocks(level);
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
 
   return (
     <div className="fadeUp">
@@ -242,58 +242,126 @@ export function HomePage({ profile, tasks, habits, moodLog, onMood, onCheckHabit
             <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14 }}>Next Up ✅</div>
             <button onClick={() => setPage("tasks")} style={{ background:"none", border:"none", color:"#6C63FF", fontSize:12, fontWeight:600, cursor:"pointer" }}>See all →</button>
           </div>
-          {topTasks.map(t => <MiniTask key={t.id} task={t} onComplete={onCompleteTask} />)}
+          {topTasks.map(t => (
+            <MiniTask key={t.id} task={t}
+              expanded={expandedTaskId === t.id}
+              onExpand={() => setExpandedTaskId(id => id === t.id ? null : t.id)}
+              onComplete={onCompleteTask}
+            />
+          ))}
         </div>
       )}
 
-      {topHabits.length > 0 && (
+      {habits.length > 0 && (
         <div style={{ marginBottom:20 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14 }}>Habits Today 🔥</div>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14 }}>Habits This Week 🔥</div>
             <button onClick={() => setPage("habits")} style={{ background:"none", border:"none", color:"#6C63FF", fontSize:12, fontWeight:600, cursor:"pointer" }}>See all →</button>
           </div>
-          {topHabits.map(h => <MiniHabit key={h.id} habit={h} onCheck={onCheckHabit} />)}
+          {habits.map(h => <WeeklyHabit key={h.id} habit={h} onCheck={onCheckHabit} onCheckDate={onCheckHabitForDate} />)}
         </div>
       )}
     </div>
   );
 }
 
-function MiniTask({ task, onComplete }) {
+function MiniTask({ task, expanded, onExpand, onComplete }) {
   const colors = { high:"#FF6B6B", medium:"#FDCB6E", low:"#55EFC4" };
   return (
-    <div onClick={() => onComplete(task)} style={{
-      display:"flex", alignItems:"center", gap:12, padding:"10px 14px",
+    <div style={{
       background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)",
       borderLeft:`3px solid ${colors[task.priority]||"#6C63FF"}`,
-      borderRadius:10, marginBottom:6, cursor:"pointer"
+      borderRadius:10, marginBottom:6, overflow:"hidden"
     }}>
-      <div style={{ width:20, height:20, borderRadius:6, border:"2px solid rgba(255,255,255,0.2)", flexShrink:0 }} />
-      <div style={{ flex:1 }}>
-        <div style={{ fontSize:13, fontWeight:500 }}>{task.title}</div>
-        {task.tag && <Tag label={`#${task.tag}`} color="#6C63FF" />}
+      {/* Header row — tap to expand, NOT to complete */}
+      <div onClick={onExpand} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", cursor:"pointer" }}>
+        <div style={{ width:20, height:20, borderRadius:6, border:"2px solid rgba(255,255,255,0.2)", flexShrink:0 }} />
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:13, fontWeight:500 }}>{task.title}</div>
+          {task.tag && <Tag label={`#${task.tag}`} color="#6C63FF" />}
+        </div>
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.xp||20}XP</span>
+          <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>{expanded ? "▲" : "▼"}</span>
+        </div>
       </div>
-      <div style={{ display:"flex", gap:6 }}>
-        <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.xp||20}XP</span>
-        <span style={{ fontSize:11, color:"#FDCB6E", fontWeight:700 }}>+{task.gold||10}🪙</span>
-      </div>
+      {/* Expanded details */}
+      {expanded && (
+        <div style={{ padding:"0 14px 12px", borderTop:"1px solid rgba(255,255,255,0.05)" }}>
+          {task.desc && <div style={{ fontSize:12, color:"rgba(255,255,255,0.45)", margin:"8px 0" }}>{task.desc}</div>}
+          {(task.subtasks||[]).length > 0 && (
+            <div style={{ marginBottom:8 }}>
+              {task.subtasks.map(s => (
+                <div key={s.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 0", fontSize:12 }}>
+                  <div style={{ width:14, height:14, borderRadius:3, border:`2px solid ${s.done?"#55EFC4":"rgba(255,255,255,0.2)"}`, background:s.done?"#55EFC4":"transparent", flexShrink:0 }}>
+                    {s.done && <span style={{ color:"#0B0D17", fontSize:8, fontWeight:900, display:"block", textAlign:"center", lineHeight:"10px" }}>✓</span>}
+                  </div>
+                  <span style={{ color:s.done?"rgba(255,255,255,0.3)":"#E8E9F3", textDecoration:s.done?"line-through":"none" }}>{s.title}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6 }}>
+            <span style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>{task.priority} priority{task.dueTime ? ` · ${task.dueTime}` : ""}</span>
+            <Btn small color="#55EFC4" style={{ color:"#0B0D17" }} onClick={() => onComplete(task)}>Complete ✓</Btn>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MiniHabit({ habit, onCheck }) {
+function WeeklyHabit({ habit, onCheck, onCheckDate }) {
+  const todayStr = today();
+  const doneToday = habit.log?.includes(todayStr);
+  // Last 7 days: oldest left, today right
+  const days = Array.from({length:7}).map((_,i) => {
+    const d = new Date(Date.now() - (6-i)*86400000);
+    const dateStr = d.toISOString().slice(0,10);
+    const label = d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,1); // M T W T F S S
+    const dayNum = d.getDate();
+    const done = habit.log?.includes(dateStr);
+    const isToday = dateStr === todayStr;
+    const isFuture = dateStr > todayStr;
+    return { dateStr, label, dayNum, done, isToday, isFuture };
+  });
+
   return (
-    <div style={{
-      display:"flex", alignItems:"center", gap:12, padding:"10px 14px",
-      background:"rgba(255,255,255,0.04)", border:`1px solid ${habit.color||"#6C63FF"}30`,
-      borderRadius:10, marginBottom:6
-    }}>
-      <div style={{ width:34, height:34, borderRadius:10, background:`${habit.color||"#6C63FF"}22`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20 }}>{habit.icon||"🌟"}</div>
-      <div style={{ flex:1 }}>
-        <div style={{ fontSize:13, fontWeight:500 }}>{habit.name}</div>
-        <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>🔥 {habit.streak||0} day streak</div>
+    <div style={{ background:"rgba(255,255,255,0.04)", border:`1px solid ${habit.color||"#6C63FF"}30`, borderRadius:12, marginBottom:8, padding:"10px 12px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+        <div style={{ width:32, height:32, borderRadius:8, background:`${habit.color||"#6C63FF"}22`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>{habit.icon||"🌟"}</div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontWeight:600, fontSize:13 }}>{habit.name}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)" }}>🔥 {habit.streak||0} day streak</div>
+        </div>
+        <Btn small color={doneToday?"rgba(255,255,255,0.1)":habit.color||"#6C63FF"}
+          style={{ color:doneToday?"rgba(255,255,255,0.4)":"#fff" }}
+          onClick={() => onCheck(habit)}>
+          {doneToday ? "✓ Done" : "Log ✓"}
+        </Btn>
       </div>
-      <Btn small color={habit.color||"#6C63FF"} onClick={() => onCheck(habit)}>Log ✓</Btn>
+      {/* 7-day row with day labels + tappable circles */}
+      <div style={{ display:"flex", gap:4, justifyContent:"space-between" }}>
+        {days.map(day => (
+          <div key={day.dateStr} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+            <div style={{ fontSize:9, color:"rgba(255,255,255,0.3)", fontWeight:600 }}>{day.label}</div>
+            <div style={{ fontSize:9, color:day.isToday?"#FDCB6E":"rgba(255,255,255,0.2)", fontWeight:day.isToday?700:400 }}>{day.dayNum}</div>
+            <button
+              onClick={() => !day.isFuture && (day.isToday ? onCheck(habit) : onCheckDate && onCheckDate(habit, day.dateStr))}
+              disabled={day.isFuture}
+              style={{
+                width:28, height:28, borderRadius:"50%", border:"none", cursor:day.isFuture?"default":"pointer",
+                background: day.done ? (habit.color||"#6C63FF") : "rgba(255,255,255,0.07)",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                outline: day.isToday ? `2px solid ${habit.color||"#6C63FF"}` : "none",
+                outlineOffset:2, transition:"background 0.15s"
+              }}
+            >
+              {day.done && <span style={{ color:"#fff", fontSize:12, fontWeight:900 }}>✓</span>}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -680,7 +748,7 @@ function TaskCard({ task, onToggle, onDelete, onPrivacyToggle, onAddSubtask, onD
                   <span style={{ fontSize:18 }}>{m.avatar}</span>
                   <span style={{ fontSize:13, flex:1, color:"#E8E9F3" }}>{m.name}</span>
                   <button
-                    onClick={() => onRemoveCollabMember && onRemoveCollabMember(uid, task.id, m.uid)}
+                    onClick={() => onRemoveCollabMember && onRemoveCollabMember(task.collabOwnerUid || uid, task.id, m.uid)}
                     style={{ background:"none", border:"none", color:"#FF6B6B", fontSize:12, cursor:"pointer", padding:"2px 6px", fontFamily:"inherit", borderRadius:6 }}
                   >Remove</button>
                 </div>

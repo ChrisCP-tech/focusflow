@@ -58,7 +58,7 @@ export function TopBar({ profile, page, onAdminTrigger }) {
   );
 }
 
-export function BottomNav({ page, setPage }) {
+export function BottomNav({ page, setPage, badges = {} }) {
   const tabs = [
     { id: "home",    icon: "🏠", label: "Home"    },
     { id: "tasks",   icon: "✅", label: "Tasks"   },
@@ -83,10 +83,26 @@ export function BottomNav({ page, setPage }) {
           display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
           cursor: "pointer", padding: "6px 2px",
           opacity: page === t.id ? 1 : 0.38,
-          transition: "opacity 0.15s ease"
+          transition: "opacity 0.15s ease",
+          position: "relative"
         }}>
-          <div style={{ fontSize: 18, transform: page === t.id ? "scale(1.18)" : "scale(1)", transition: "transform 0.15s ease" }}>
-            {t.icon}
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <div style={{ fontSize: 18, transform: page === t.id ? "scale(1.18)" : "scale(1)", transition: "transform 0.15s ease" }}>
+              {t.icon}
+            </div>
+            {/* Badge dot */}
+            {badges[t.id] > 0 && (
+              <div style={{
+                position: "absolute", top: -4, right: -6,
+                minWidth: 16, height: 16, borderRadius: 8,
+                background: "#FF6B6B", border: "2px solid #0B0D17",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800, color: "#fff", lineHeight: 1,
+                padding: "0 3px"
+              }}>
+                {badges[t.id] > 9 ? "9+" : badges[t.id]}
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 8, fontWeight: 700, color: page === t.id ? "#6C63FF" : "rgba(255,255,255,0.5)", letterSpacing: "0.04em" }}>
             {t.label}

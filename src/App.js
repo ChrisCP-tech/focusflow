@@ -43,7 +43,7 @@ export default function App() {
   const roomId = getRoomId();
 
   const { tasks, addTask, toggleTask, deleteTask, toggleTaskPrivacy, addSubtask, setSubtasks, toggleSubtask, deleteSubtask } = useTasks(uid);
-  const { habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy }                        = useHabits(uid);
+  const { habits, addHabit, checkHabit, checkHabitForDate, deleteHabit, toggleHabitPrivacy }      = useHabits(uid);
   const { feed, postToFeed, likePost, commentOnPost, deletePost }                                 = useFeed(roomId);
   const { members, joinRoom, updateMemberStats, pingPresence }                                                  = useSquadMembers(roomId);
   const { moodLog, logMood }                                                                      = useMoodLog(uid);
@@ -281,6 +281,7 @@ export default function App() {
         {page === "home" && (
           <HomePage profile={profile} tasks={tasks} habits={habits} moodLog={moodLog}
             onMood={handleMood} onCheckHabit={requestCheckHabit}
+            onCheckHabitForDate={(habit, dateStr) => checkHabitForDate(habit, dateStr)}
             onCompleteTask={requestComplete} setPage={setPage} />
         )}
         {page === "tasks" && (
@@ -337,7 +338,11 @@ export default function App() {
         )}
       </div>
 
-      <BottomNav page={page} setPage={setPage} />
+      <BottomNav page={page} setPage={setPage} badges={{
+        social:  (friends||[]).filter(f => f.status === "pending" && f.direction === "incoming").length,
+        home:    (taskInvites||[]).filter(i => i.status === "pending").length,
+        tasks:   (taskInvites||[]).filter(i => i.status === "pending").length,
+      }} />
 
       {/* Confirm modal — task & habit completion */}
       <ConfirmModal

@@ -146,10 +146,24 @@ export function useHabits(uid) {
     return newStreak;
   }, [uid]);
 
+  const checkHabitForDate = useCallback(async (habit, dateStr) => {
+    if (!uid || !dateStr) return false;
+    const log = habit.log || [];
+    if (log.includes(dateStr)) {
+      // Toggle off — remove that date
+      const newLog = log.filter(d => d !== dateStr);
+      await updateDoc(doc(db, "users", uid, "habits", habit.id), { log: newLog });
+      return "undone";
+    }
+    // Add that past date
+    await updateDoc(doc(db, "users", uid, "habits", habit.id), { log: arrayUnion(dateStr) });
+    return true;
+  }, [uid]);
+
   const deleteHabit = useCallback(async (id) => { if (uid) await deleteDoc(doc(db, "users", uid, "habits", id)); }, [uid]);
   const toggleHabitPrivacy = useCallback(async (id, isPublic) => { if (uid) await updateDoc(doc(db, "users", uid, "habits", id), { isPublic }); }, [uid]);
 
-  return { habits, addHabit, checkHabit, deleteHabit, toggleHabitPrivacy };
+  return { habits, addHabit, checkHabit, checkHabitForDate, deleteHabit, toggleHabitPrivacy };
 }
 
 /* ─── Mood ───────────────────────────────────────────────────────────────── */
@@ -432,6 +446,23 @@ export function useGold(uid) {
 
 /* ─── Fetch any user's profile ───────────────────────────────────────────── */
 /* ─── Search users by name ───────────────────────────────────────────────── */
+export async function searchUsersByEmail(email, currentUid) {
+  if (!email || !email.includes("@")) return [];
+  try {
+    const q = query(
+      collection(db, "users"),
+      where("email", "==", email.toLowerCase().trim()),
+      limit(3)
+    );
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => ({ uid: d.id, ...d.data() }))
+      .filter(u => u.uid !== currentUid);
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function searchUsers(queryStr, currentUid) {
   if (!queryStr || queryStr.trim().length < 2) return [];
   try {

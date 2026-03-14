@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Btn, Input, Tag } from "./UI";
 import { getLevel, xpProgress, LEVEL_NAMES, getLevelUnlocks, getUnlockedAvatars, streakColor, today, TYPE_ICONS, TYPE_COLORS } from "../utils";
-import { fetchUserProfile, searchUsers } from "../hooks/useData";
+import { fetchUserProfile, searchUsers, searchUsersByEmail } from "../hooks/useData";
 import { collection, query, where, limit, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
@@ -678,15 +678,20 @@ export function SocialPage({ feed, members, profile, roomId, onPost, onLike, onC
     setSearching(false);
   }
 
+  const emailDebounceRef = useRef(null);
+
   async function handleEmailSearch(q) {
     setEmailQuery(q);
     setEmailRes([]);
     if (!q.includes("@") || q.trim().length < 5) return;
-    setEmailSearching(true);
-    const friendUids = new Set((friends||[]).map(f => f.uid));
-    const results = await searchUsersByEmail(q.trim(), uid);
-    setEmailRes(results.filter(u => !friendUids.has(u.uid)));
-    setEmailSearching(false);
+    clearTimeout(emailDebounceRef.current);
+    emailDebounceRef.current = setTimeout(async () => {
+      setEmailSearching(true);
+      const friendUids = new Set((friends||[]).map(f => f.uid));
+      const results = await searchUsersByEmail(q.trim(), uid);
+      setEmailRes(results.filter(u => !friendUids.has(u.uid)));
+      setEmailSearching(false);
+    }, 600);
   }
 
   const tabs = [
