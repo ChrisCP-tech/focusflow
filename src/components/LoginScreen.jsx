@@ -9,7 +9,8 @@ export default function LoginScreen({ onLogin }) {
       <div style={{ width: "100%", maxWidth: 380, textAlign: "center", animation: "fadeUp 0.4s ease" }}>
 
         {/* Logo */}
-        <div style={{ fontSize: 64, marginBottom: 16, filter: "drop-shadow(0 0 24px rgba(108,99,255,0.5))" }}>🧠</div>
+        <img src="/logo512.png" alt="Temper Ascension" style={{ width: 140, height: 140, objectFit: "contain", marginBottom: 16, filter: "drop-shadow(0 0 32px rgba(255,80,0,0.4))" }} />
+
         <h1 style={{
           fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 38,
           background: "linear-gradient(135deg,#6C63FF,#FDCB6E)",
@@ -20,7 +21,6 @@ export default function LoginScreen({ onLogin }) {
           Your ADHD-friendly squad planner.<br />One account. Every device. 🚀
         </p>
 
-        {/* Feature pills */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 40 }}>
           {["✅ Tasks + XP","🔥 Habit streaks","⏱ Focus timer","👥 Squad feed","📊 Mood tracking","🏆 Leaderboard"].map(f => (
             <div key={f} style={{
@@ -30,7 +30,6 @@ export default function LoginScreen({ onLogin }) {
           ))}
         </div>
 
-        {/* Sign in */}
         <button onClick={onLogin} style={{
           width: "100%", padding: "14px 24px", borderRadius: 14,
           background: "#fff", border: "none", cursor: "pointer",
